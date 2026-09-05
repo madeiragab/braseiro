@@ -43,6 +43,137 @@ function Slug($s) {
 # leitura de PDF: ExtrairTextoPdf
 . (Join-Path $PSScriptRoot "pdf.ps1")
 
+# Onde comeca o bloco de memoria. Exige o marcador INTEIRO (###FICHA###), nao
+# so "###": o modelo escreve "### Titulo" como cabecalho markdown no meio da
+# narracao, e cortar no "###" solto jogava a cena inteira fora.
+$RX_BLOCO = New-Object Regex('###\s*(FICHA|LORE|MUNDO|DIARIO|APAGAR|FIM)\s*###', 'IgnoreCase')
+$RESERVA_BLOCO = 14   # chars segurados no streaming pra nao partir o marcador
+
+# Onde a resposta tem que acabar: o bloco de memoria OU a linha de devolver a
+# vez pro jogador, o que vier primeiro. Depois do fecho o modelo so consegue
+# errar - e o erro que ele comete ali e justamente jogar pelo jogador.
+function AcharFecho([string]$t) {
+  $a = AcharBloco $t
+  $b = $t.IndexOf('Mestre: o que', [StringComparison]::OrdinalIgnoreCase)
+  if ($a -lt 0) { return $b }
+  if ($b -lt 0) { return $a }
+  [Math]::Min($a, $b)
+}
+
+function AcharBloco([string]$t) {
+  $m = $RX_BLOCO.Match($t)
+  if ($m.Success) { $m.Index } else { -1 }
+}
+
+# O modelo repete a mesma frase cortada em tamanhos diferentes. Comparacao
+# exata deixa passar, e prefixo de tamanho fixo tambem. Entao: e repetido se
+# um for comeco do outro, nos dois sentidos.
+function EhRepetido([string]$novo, $lista) {
+  $a = SemAcento $novo
+  if ($a.Length -lt 12) { return $false }
+  foreach ($v in $lista) {
+    $b = SemAcento $v
+    if ($b.Length -lt 12) { continue }
+    $n = [Math]::Min($a.Length, $b.Length)
+    if ($n -ge 25 -and $a.Substring(0, $n) -eq $b.Substring(0, $n)) { return $true }
+  }
+  $false
+}
+
+# O modelo as vezes ecoa os rotulos do proprio prompt ("PARTE 1 - A CENA").
+# Isso e andaime da instrucao, nao narracao: sai antes de chegar na tela.
+# Com toda fala levando o nome na frente ("Alysa- sai da frente"), a regra de
+# nao falar pelo jogador deixa de depender da memoria do modelo e vira coisa que
+# eu checo aqui: linha que comeca com o nome dele nao passa.
+# Tira da narracao tudo que o Mestre poe na conta do personagem do jogador:
+# fala prefixada com o nome dele, e frase em terceira pessoa ("Liam ergue a"
+# arma"). Vive separado porque roda DUAS vezes - no texto final e, mais
+# importante, em cada pedaco antes de sair pela rede. Antes o servidor
+# transmitia cru e so limpava depois: dava certo no arquivo e errado na tela.
+# So as letras, pra comparar duas falas sem tropecar em acento e pontuacao.
+function _chaveFala([string]$s) {
+  ((SemAcento $s).ToLowerInvariant() -replace '[^a-z0-9]', '')
+}
+
+function CortarJogador([string]$t, [string]$nomeJogador, [bool]$avisar, [string]$entrada) {
+  if (-not $t -or -not $nomeJogador) { return $t }
+  $primeiro = ($nomeJogador -split '\s+')[0]
+  if ($primeiro.Length -lt 3) { return $t }
+  $rx = '(?im)^[\s<\[(*_"''\u201C]*' + [Regex]::Escape($primeiro) + '[^\r\n]{0,24}?[>\])*_"'']*\s*[-–—:]\s*.*$'
+  $cortadas = ([Regex]::Matches($t, $rx)).Count
+  if ($cortadas -gt 0) {
+    $t = [Regex]::Replace($t, $rx, '')
+    if ($avisar) { Write-Host ("   cortei " + $cortadas + " fala(s) posta(s) na boca do jogador") -ForegroundColor DarkYellow }
+  }
+  $linhas = New-Object Collections.ArrayList
+  $tirei = 0
+  foreach ($ln in ($t -split "`r?`n")) {
+    if ($ln -match '^\s*[^\s-]{2,20}\s*[-–—]\s*\S') { [void]$linhas.Add($ln); continue }
+    $fica = New-Object Collections.ArrayList
+    foreach ($fr in [Regex]::Split($ln, '(?<=[.!?])\s+')) {
+      # O nome pode estar no meio da frase e ainda assim ser o Mestre jogando
+      # por ele: '"Para", diz Liam.' Dentro de aspas e outra coisa - um NPC
+      # chamando o jogador pelo nome pode e deve acontecer. Entao a decisao e
+      # tomada sobre a frase SEM as partes entre aspas.
+      # O modelo as vezes poe a fala do JOGADOR na boca de um NPC - a mulher
+      # perguntando de volta o que voce acabou de perguntar. Se o que esta
+      # entre aspas e a sua propria jogada, a frase inteira cai.
+      if ($entrada) {
+        $kEnt = _chaveFala $entrada
+        if ($kEnt.Length -ge 8) {
+          $eco = $false
+          foreach ($asp in [Regex]::Matches($fr, '["\u201C][^"\u201C\u201D]{4,}["\u201D]')) {
+            $kA = _chaveFala $asp.Value
+            if ($kA.Length -ge 8 -and ($kEnt.Contains($kA) -or $kA.Contains($kEnt))) { $eco = $true; break }
+          }
+          if ($eco) { $tirei++; continue }
+        }
+      }
+      $semFala = [Regex]::Replace($fr, '["\u201C\u201D][^"\u201C\u201D]*["\u201C\u201D]', ' ')
+      if ($semFala -match ('(?i)\b' + [Regex]::Escape($primeiro) + '\b')) { $tirei++; continue }
+      [void]$fica.Add($fr)
+    }
+    $sobrou = ($fica -join ' ').Trim()
+    if ($sobrou -or -not $ln.Trim()) { [void]$linhas.Add($sobrou) }
+  }
+  if ($tirei -gt 0) {
+    $t = ($linhas -join "`n")
+    if ($avisar) { Write-Host ("   cortei " + $tirei + " frase(s) narrando o personagem do jogador") -ForegroundColor DarkYellow }
+  }
+  $t
+}
+
+# Ate onde da pra transmitir sem cortar uma frase pela metade. Sem isso o
+# filtro veria "Liam erg" e deixaria passar, porque a frase ainda nao acabou.
+function UltimaFronteira([string]$s, [int]$ate) {
+  if ($ate -le 0) { return 0 }
+  if ($ate -gt $s.Length) { $ate = $s.Length }
+  for ($k = $ate - 1; $k -ge 0; $k--) {
+    $c = $s[$k]
+    if ($c -eq "`n") { return $k + 1 }
+    if (($c -eq '.' -or $c -eq '!' -or $c -eq '?') -and (($k + 1) -ge $s.Length -or $s[$k + 1] -match '\s')) { return $k + 1 }
+  }
+  0
+}
+
+function LimparNarracao([string]$t, [string]$nomeJogador, [string]$entrada) {
+  if (-not $t) { return "" }
+  $t = CortarJogador $t $nomeJogador $true $entrada
+  if ($nomeJogador) {
+    $ix = $t.IndexOf('Mestre: o que', [StringComparison]::OrdinalIgnoreCase)
+    if ($ix -ge 0) { $t = $t.Substring(0, $ix) }
+    $t = [Regex]::Replace($t.TrimEnd(), "`r?`n{3,}", "`n`n")
+    $t = $t + "`n`nMestre: o que " + (($nomeJogador -split '\s+')[0]) + " diz ou faz?"
+  }
+  $t = [Regex]::Replace($t, '(?im)^\s*(#{1,4}\s*)?PARTE\s*\d+\s*[-–:]?\s*(A\s+CENA|O\s+BLOCO.*|BLOCO.*)?\s*$', '')
+  $t = [Regex]::Replace($t, '(?im)^\s*(#{1,4}\s*)?(A\s+CENA|NARRACAO|NARRAÇÃO)\s*:?\s*$', '')
+  $t = [Regex]::Replace($t, '(?im)^\s*-{3,}\s*(fim do )?exemplo.*$', '')
+  # o corte por fronteira de frase as vezes junta \"direcao.Alysa\" sem espaco
+  $t = [Regex]::Replace($t, '(?<=[.!?])(?=[A-Z\u00C0-\u00DA\u201C"])', ' ')
+  $t = [Regex]::Replace($t, "`r?`n{3,}", "`n`n")
+  $t.Trim()
+}
+
 # ------------------------------------------------------------------- config
 
 $ArqCfg = Join-Path $Raiz "config.txt"
@@ -769,6 +900,7 @@ while ($listener.IsListening) {
         $os = $r.GetRequestStream(); $os.Write($pb, 0, $pb.Length); $os.Close()
         $rd = New-Object IO.StreamReader($r.GetResponse().GetResponseStream(), [Text.Encoding]::UTF8)
 
+        $nomeJog = if ((Ler (Join-Path $Campanha '02-personagem.md')) -match '(?im)^\s*-\s*nome\s*:\s*(.+)$') { $Matches[1].Trim() } else { '' }
         $full = ""; $emitido = 0; $cortado = $false
         while (-not $rd.EndOfStream) {
           $linha = $rd.ReadLine()
@@ -777,18 +909,22 @@ while ($listener.IsListening) {
           if ($j.message -and $j.message.content) {
             $full += [string]$j.message.content
             if (-not $cortado) {
-              $i = $full.IndexOf("###")
+              $i = AcharFecho $full
               if ($i -ge 0) {
                 if ($i -gt $emitido) {
-                  $sw.Write("event: texto`ndata: " + (ConvertTo-Json @{ t = $full.Substring($emitido, $i - $emitido) } -Compress) + "`n`n")
+                  $pedaco = CortarJogador ($full.Substring($emitido, $i - $emitido)) $nomeJog $false $entrada
+                  if ($pedaco.Trim()) { $sw.Write("event: texto`ndata: " + (ConvertTo-Json @{ t = $pedaco } -Compress) + "`n`n") }
                 }
                 $emitido = $i
                 $cortado = $true
               } else {
-                # segura os 3 ultimos chars pra nao cortar um "###" no meio
-                $seguro = $full.Length - 3
+                # segura o fim pra nao partir "###FICHA###" entre dois chunks
+                # so ate o fim da ultima frase inteira: o filtro precisa da frase
+                # completa pra decidir, e o jogador nao pode ver o que vai sumir.
+                $seguro = UltimaFronteira $full ($full.Length - $RESERVA_BLOCO)
                 if ($seguro -gt $emitido) {
-                  $sw.Write("event: texto`ndata: " + (ConvertTo-Json @{ t = $full.Substring($emitido, $seguro - $emitido) } -Compress) + "`n`n")
+                  $pedaco = CortarJogador ($full.Substring($emitido, $seguro - $emitido)) $nomeJog $false $entrada
+                  if ($pedaco.Trim()) { $sw.Write("event: texto`ndata: " + (ConvertTo-Json @{ t = $pedaco } -Compress) + "`n`n") }
                   $emitido = $seguro
                 }
               }
@@ -798,17 +934,31 @@ while ($listener.IsListening) {
         }
         $rd.Close()
         if (-not $cortado -and $full.Length -gt $emitido) {
-          $sw.Write("event: texto`ndata: " + (ConvertTo-Json @{ t = $full.Substring($emitido) } -Compress) + "`n`n")
+          $pedaco = CortarJogador ($full.Substring($emitido)) $nomeJog $false $entrada
+          if ($pedaco.Trim()) { $sw.Write("event: texto`ndata: " + (ConvertTo-Json @{ t = $pedaco } -Compress) + "`n`n") }
+        }
+        # a vez volta pro jogador SEMPRE, escrita pelo servidor. Se o modelo
+        # esqueceu, ela aparece do mesmo jeito; se ele escreveu, foi cortada
+        # acima e esta e a unica que sobra.
+        if ($nomeJog) {
+          $fecho = "`n`nMestre: o que " + (($nomeJog -split '\s+')[0]) + " diz ou faz?"
+          $sw.Write("event: texto`ndata: " + (ConvertTo-Json @{ t = $fecho } -Compress) + "`n`n")
         }
 
-        $i = $full.IndexOf("###")
-        if ($i -ge 0) { $narracao = $full.Substring(0, $i).TrimEnd(); $bloco = $full.Substring($i) }
-        else          { $narracao = $full.TrimEnd();                  $bloco = "" }
+        # A narracao e tudo. Se o modelo ainda assim cuspir um bloco, corta.
+        $i = AcharBloco $full
+        $narracao = if ($i -ge 0) { LimparNarracao $full.Substring(0, $i) $nomeJog $entrada } else { LimparNarracao $full $nomeJog $entrada }
 
-        $mudou = AplicarAtualizacao $bloco
+        # Segunda chamada, so pra anotar. O jogador ja esta lendo a cena.
+        $sw.Write("event: anotando`ndata: {}`n`n")
+        # 3 de 3: anotar
+        $bloco = PedirBloco $narracao
+        $mudou = AplicarAtualizacao $bloco $diretor
 
         $Historico += @{ papel = "user";      texto = $entrada }
-        $Historico += @{ papel = "assistant"; texto = $narracao }
+        # guarda o bloco separado: a tela nunca ve, mas ele volta pro modelo
+        # nas duas ultimas respostas, como exemplo do formato certo
+        $Historico += @{ papel = "assistant"; texto = $narracao; bloco = $bloco }
         if ($Historico.Count -gt 120) { $Historico = @($Historico | Select-Object -Last 120) }
         SalvarHist
 
