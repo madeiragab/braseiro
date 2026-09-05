@@ -17,11 +17,46 @@ campanha/livros/
         └── deuses.md
 ```
 
-Formatos aceitos: `.md`, `.markdown`, `.txt`. **PDF não.**
+Formatos aceitos: **`.pdf`**, `.md`, `.markdown` e `.txt`.
 
-Pra converter: no leitor de PDF, "Salvar como" → texto. Ou copie e cole só o
-capítulo que interessa — quase sempre é melhor, porque livro de RPG é cheio de
-arte, índice e tabela que viram ruído.
+## PDF
+
+Solte o `.pdf` na pasta. Na primeira vez ele vira um `.pdf.txt` do lado, e dali
+em diante é texto como qualquer outro. A conversão só refaz se você trocar o PDF.
+
+Livro grande demora — e a conversão travaria a primeira jogada em silêncio. Pra
+esses, rode **`CONVERTER-PDF.bat`** antes: converte tudo mostrando progresso.
+
+O `.pdf.txt` é um arquivo comum. **Vale muito a pena abrir e arrumar**: apagar
+índice e ficha técnica, ajustar onde o corte de seção ficou errado, e principalmente
+acrescentar linhas `chaves:` embaixo dos títulos.
+
+### O que funciona e o que não
+
+| PDF | resultado |
+|---|---|
+| gerado por editor de texto, LaTeX, InDesign | ✅ extrai |
+| comprimido em FlateDecode (a maioria) | ✅ extrai |
+| **escaneado** (página é foto) | ❌ não tem texto por baixo; só com OCR |
+| fonte com codificação própria, sem mapa `ToUnicode` | ❌ sairia garrancho |
+
+Quando não dá, aparece um `.pdf.aviso` ao lado explicando o motivo, e **nada é
+indexado daquele arquivo**. Isso é de propósito: meio livro em garrancho estraga
+mais a campanha do que livro nenhum. A aba **livros** no painel lista os dois casos.
+
+Pros que não deram: no leitor de PDF use "Salvar como" → texto, ou copie e cole
+só o capítulo que interessa. Quase sempre fica melhor mesmo — livro de RPG é
+cheio de arte, índice e tabela que viram ruído.
+
+### Como a extração acha os títulos
+
+PDF não tem `##`. Então o conversor promove a título as linhas curtas (até 60
+caracteres) que não terminam em pontuação e estão em CAIXA ALTA ou isoladas por
+linha em branco — que é como capítulo de livro de RPG costuma aparecer.
+
+Quando nenhum título é detectado num pedaço, as palavras-chave saem do **próprio
+texto** do pedaço (as mais repetidas). Sem isso, texto sem título ficaria
+inalcançável, porque só termo forte dispara uma seção.
 
 ## Como cortar
 

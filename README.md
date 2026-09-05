@@ -250,7 +250,15 @@ personagem disser que está procurando.
 você escreve *"saco a espada e parto pra cima do orc"*. Liste as palavras que
 você realmente vai usar jogando.
 
-PDF não serve; tem que ser texto. Guia completo em [`docs/livros.md`](docs/livros.md).
+**PDF funciona.** Solte o `.pdf` na pasta e ele vira um `.pdf.txt` do lado, uma
+vez só — extração em PowerShell puro, sem dependência nenhuma. Livro grande:
+rode `CONVERTER-PDF.bat` antes, pra não travar a primeira jogada.
+
+PDF **escaneado** não dá (a página é foto, não tem texto por baixo). Nesse caso
+ele grava um `.pdf.aviso` explicando e **não indexa nada daquele arquivo** — meio
+livro em garrancho estraga mais a campanha do que livro nenhum.
+
+Guia completo em [`docs/livros.md`](docs/livros.md).
 
 ---
 
@@ -280,12 +288,17 @@ braseiro/
 ├── INICIAR.bat              ← liga o motor, abre o navegador
 ├── BAIXAR-MODELO.bat        ← ollama pull
 ├── IMPORTAR-MODELO.bat      ← importa um .gguf baixado à mão
+├── CONVERTER-PDF.bat        ← converte os PDF dos livros, com progresso
+├── CRIAR-ATALHO.bat         ← põe o atalho com ícone na pasta acima
 ├── config.txt
 │
 ├── mestre/
-│   ├── servidor.ps1         ← HTTP + prompt + recuperação + escrita  (~430 linhas)
+│   ├── servidor.ps1         ← HTTP + prompt + recuperação + escrita
+│   ├── pdf.ps1              ← extração de texto de PDF, PowerShell puro
 │   ├── ui.html              ← interface, sem framework, sem build
 │   ├── importar.ps1
+│   ├── converter.ps1
+│   ├── atalho.ps1
 │   └── braseiro.ico
 │
 ├── campanha/                ← seus dados; o Mestre lê e escreve aqui
@@ -308,7 +321,8 @@ Coisas que **não** funcionam, ditas na cara:
 
 - **Não roda sozinho ao plugar o pendrive.** O autorun de USB está desativado
   desde o Windows 7 e não há contorno seguro. O atalho na raiz é o mais perto disso.
-- **PDF não é lido.** Só texto.
+- **PDF escaneado não é lido.** A página é imagem e não há OCR aqui. PDF gerado
+  por editor de texto funciona; o escaneado é recusado com aviso, não silenciosamente.
 - **A recuperação é por palavra-chave, não semântica.** Se a palavra não está no
   título nem em `chaves:`, a seção não é encontrada. É simples de propósito —
   embeddings exigiriam um segundo modelo carregado, e a VRAM não sobra.
