@@ -4,7 +4,12 @@
 
 ## Where
 
-Inside the campaign folder, which lives in `Documents/Braseiro/<your campaign>/`.
+**The short way: drag the files onto the Braseiro window.** They go into the open
+campaign, PDFs are converted on the spot, indexed, and it replies in the chat
+telling you what went in and what did not. The **📚 adicionar livros do sistema**
+button in the panel does the same through an Explorer dialog.
+
+By hand, it is inside the campaign folder, in `Documents/Braseiro/<your campaign>/`.
 As many subfolders as you want:
 
 ```

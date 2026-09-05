@@ -252,7 +252,14 @@ Save it and it applies on the next turn.
 
 ## The rulebooks
 
-Drop `.pdf`, `.md` or `.txt` files into your campaign's `livros/` folder, with as many
+**Drag the files onto the Braseiro window.** That is it. They go into the open
+campaign, PDFs are converted on the spot and indexed immediately — no restart, no
+hunting for a folder. There is also a **📚 adicionar livros do sistema** button in
+the panel if you would rather pick them through Explorer.
+
+It replies in the chat saying how many went in and which ones failed, with the reason.
+
+If you would rather do it by hand, the folder is `livros/` inside the campaign, with as many
 subfolders as you like:
 
 ```

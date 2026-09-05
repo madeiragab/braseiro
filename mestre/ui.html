@@ -120,11 +120,39 @@
     word-break:break-all;border-bottom:1px solid var(--linha);
   }
 
+  /* ---------------- soltar livros ---------------- */
+  #cortina{
+    position:fixed;inset:0;z-index:50;display:none;
+    background:rgba(20,17,15,.92);backdrop-filter:blur(2px);
+    align-items:center;justify-content:center;text-align:center;
+  }
+  #cortina.on{display:flex}
+  #cortina .caixa{
+    border:2px dashed var(--brasa);border-radius:14px;padding:44px 60px;
+    background:rgba(42,31,22,.6);
+  }
+  #cortina .chama{font-size:44px;line-height:1}
+  #cortina h2{margin:14px 0 6px;font-size:21px;color:var(--texto);font-weight:normal}
+  #cortina p{margin:0;font-size:13.5px;color:var(--fraco)}
+  #btnLivros{
+    width:100%;background:none;border:1px dashed var(--linha);color:var(--fraco);
+    border-radius:6px;padding:9px;cursor:pointer;font-size:12.5px;margin-bottom:2px;
+  }
+  #btnLivros:hover{color:var(--brasa);border-color:var(--brasa)}
+
   ::-webkit-scrollbar{width:9px}
   ::-webkit-scrollbar-thumb{background:#332c26;border-radius:5px}
 </style>
 </head>
 <body>
+
+<div id="cortina">
+  <div class="caixa">
+    <div class="chama">🔥</div>
+    <h2>solta os livros aqui</h2>
+    <p>PDF, .md ou .txt — vão direto pra esta campanha</p>
+  </div>
+</div>
 
 <div id="marca">
   <svg viewBox="0 0 256 256" aria-hidden="true">
@@ -155,6 +183,10 @@
     <button id="btnPasta" title="abrir a pasta no Explorador">📁</button>
   </div>
   <div id="ondeSalva"></div>
+  <div style="padding:0 12px 10px">
+    <button id="btnLivros">📚 adicionar livros do sistema</button>
+    <input type="file" id="arqLivros" multiple accept=".pdf,.md,.markdown,.txt" hidden>
+  </div>
   <div id="abas"></div>
   <textarea id="editor" spellcheck="false"></textarea>
   <div id="rodape">
@@ -269,6 +301,57 @@ $("#btnNova").onclick = () => {
   if (n && n.trim()) trocarMesa(n.trim());
 };
 $("#btnPasta").onclick = () => fetch("/api/abrir-pasta", {method:"POST"});
+
+/* ---------- soltar livros ---------- */
+async function engolirLivros(lista){
+  const arqs = [...lista].filter(f => /\.(pdf|md|markdown|txt)$/i.test(f.name));
+  if (!arqs.length){
+    bolha("erro", "Só engulo .pdf, .md ou .txt. O resto não dá pra indexar.");
+    return;
+  }
+  const aviso = bolha("mestre", "*Guardando " + arqs.length + " arquivo(s)…*");
+  const ok = [], falhos = [];
+
+  for (const f of arqs){
+    aviso.innerHTML = enfeita("*Lendo **" + f.name + "**…*");
+    try {
+      const r = await fetch("/api/livros/soltar?nome=" + encodeURIComponent(f.name),
+        {method:"POST", body:f}).then(r => r.json());
+      if (r.ok && r.convertido) ok.push(f.name);
+      else falhos.push(f.name + (r.motivo || r.erro ? " — " + (r.motivo || r.erro) : ""));
+    } catch(e){
+      falhos.push(f.name + " — " + e.message);
+    }
+  }
+
+  let txt = "";
+  if (ok.length)     txt += "**" + ok.length + " livro(s) no lugar.** " + ok.join(", ") + "\n\n";
+  if (falhos.length) txt += "**Não deu pra ler " + falhos.length + ":**\n" + falhos.map(x => "· " + x).join("\n") + "\n\n*Esses provavelmente são escaneados. Abra no leitor de PDF, \"Salvar como\" texto, e solte o .txt aqui.*";
+  if (ok.length && !falhos.length) txt += "*Já valem na próxima jogada. Veja a aba **livros** pra conferir o corte.*";
+  aviso.innerHTML = enfeita(txt.trim());
+  noFim();
+  await carregar();
+}
+
+$("#btnLivros").onclick = () => $("#arqLivros").click();
+$("#arqLivros").onchange = e => { engolirLivros(e.target.files); e.target.value = ""; };
+
+let arrastando = 0;
+window.addEventListener("dragenter", e => {
+  if (!e.dataTransfer || ![...e.dataTransfer.types].includes("Files")) return;
+  e.preventDefault(); arrastando++; $("#cortina").classList.add("on");
+});
+window.addEventListener("dragover", e => {
+  if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) e.preventDefault();
+});
+window.addEventListener("dragleave", e => {
+  if (--arrastando <= 0){ arrastando = 0; $("#cortina").classList.remove("on"); }
+});
+window.addEventListener("drop", e => {
+  if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+  e.preventDefault(); arrastando = 0; $("#cortina").classList.remove("on");
+  engolirLivros(e.dataTransfer.files);
+});
 
 /* ---------- jogar ---------- */
 campo.addEventListener("input", () => {
