@@ -245,6 +245,8 @@ function AbrirCampanha($nome) {
   if (-not (Test-Path -LiteralPath $script:Campanha)) { SemearCampanha $script:Campanha }
   $script:DirLore   = Join-Path $script:Campanha "lore"
   $script:DirLivros = Join-Path $script:Campanha "livros"
+  $script:DirCriaturas = Join-Path $script:Campanha "criaturas"
+  $script:DirAliados   = Join-Path $script:Campanha "aliados"
   $script:ArqHist   = Join-Path $script:Campanha ".historico.json"
   $script:Historico = @()
   if (Test-Path -LiteralPath $script:ArqHist) {
@@ -262,10 +264,9 @@ function SalvarHist { Gravar $ArqHist (ConvertTo-Json @($Historico) -Depth 5 -Co
 
 # Le campanha/lore/*.md e devolve so as entradas cujas chaves aparecem no texto recente.
 # E isso que segura campanha longa sem estourar contexto.
-function LoreRelevante($texto) {
-  $alvo = SemAcento $texto
-  $out  = New-Object Collections.ArrayList
-  if (-not (Test-Path -LiteralPath $DirLore)) { return "" }
+function CarregarLore {
+  $itens = New-Object Collections.ArrayList
+  if (-not (Test-Path -LiteralPath $DirLore)) { return $itens }
   foreach ($f in (Get-ChildItem -LiteralPath $DirLore -Filter *.md -File)) {
     $c = Ler $f.FullName
     $chaves = @()
@@ -279,12 +280,87 @@ function LoreRelevante($texto) {
     } else {
       $chaves = @(SemAcento $f.BaseName)
     }
-    foreach ($k in $chaves) {
-      if ($k.Length -ge 3 -and $alvo.Contains($k)) { [void]$out.Add($corpo.Trim()); break }
+    [void]$itens.Add([pscustomobject]@{
+      arquivo = $f.Name
+      base    = SemAcento $f.BaseName
+      chaves  = @($chaves)
+      corpo   = $corpo.Trim()
+    })
+  }
+  , $itens
+}
+
+$TETO_LORE = 10
+
+# Duas etapas. Primeiro as entradas cuja chave foi citada na conversa. Depois UM
+# salto pelos [[wikilinks]] que essas entradas contem - e o que faz o irmao do
+# Gorm chegar junto com o Gorm, sem ninguem ter citado o irmao. Sem esse salto a
+# lore fica plana e o modelo reinventa parentesco a cada sessao.
+function LoreRelevante($texto) {
+  $todos = CarregarLore
+  if ($todos.Count -eq 0) { return "" }
+  $alvo = SemAcento $texto
+
+  $diretas = New-Object Collections.ArrayList
+  $vistos  = New-Object Collections.Generic.HashSet[string]
+
+  foreach ($i in $todos) {
+    foreach ($k in $i.chaves) {
+      if ($k.Length -ge 3 -and $alvo.Contains($k)) {
+        if ($vistos.Add($i.arquivo)) { [void]$diretas.Add($i) }
+        break
+      }
     }
   }
-  if ($out.Count -eq 0) { return "" }
-  "## Fatos relevantes agora`n" + (($out | Select-Object -First 12) -join "`n`n")
+  if ($diretas.Count -eq 0) { return "" }
+
+  $ligadas = New-Object Collections.ArrayList
+
+  # ida: [[Nome]] ou [[Nome|apelido]] dentro das entradas citadas
+  $alvosLink = New-Object Collections.ArrayList
+  foreach ($i in $diretas) {
+    foreach ($m in [Regex]::Matches($i.corpo, '\[\[([^\]\|]+?)(?:\|[^\]]*)?\]\]')) {
+      [void]$alvosLink.Add((SemAcento $m.Groups[1].Value.Trim()))
+    }
+  }
+  foreach ($l in (@($alvosLink) | Select-Object -Unique)) {
+    if (-not $l -or ($diretas.Count + $ligadas.Count) -ge $TETO_LORE) { break }
+    foreach ($i in $todos) {
+      if ($vistos.Contains($i.arquivo)) { continue }
+      if ($i.base -eq $l -or ($i.chaves -contains $l)) {
+        [void]$vistos.Add($i.arquivo)
+        [void]$ligadas.Add($i)
+        break
+      }
+    }
+  }
+
+  # volta (backlink): quem aponta PRA elas. E o que faz "a prima do Gorm" aparecer
+  # quando so o Gorm foi citado - o parentesco costuma estar escrito so de um lado.
+  $nomesDiretos = New-Object Collections.ArrayList
+  foreach ($i in $diretas) {
+    [void]$nomesDiretos.Add($i.base)
+    foreach ($k in $i.chaves) { if ($k.Length -ge 3) { [void]$nomesDiretos.Add($k) } }
+  }
+  $nomesDiretos = @($nomesDiretos | Select-Object -Unique)
+  foreach ($i in $todos) {
+    if (($diretas.Count + $ligadas.Count) -ge $TETO_LORE) { break }
+    if ($vistos.Contains($i.arquivo)) { continue }
+    $aponta = $false
+    foreach ($m in [Regex]::Matches($i.corpo, '\[\[([^\]\|]+?)(?:\|[^\]]*)?\]\]')) {
+      if ($nomesDiretos -contains (SemAcento $m.Groups[1].Value.Trim())) { $aponta = $true; break }
+    }
+    if ($aponta) {
+      [void]$vistos.Add($i.arquivo)
+      [void]$ligadas.Add($i)
+    }
+  }
+
+  $t = "## Fatos relevantes agora`n" + ((@($diretas | Select-Object -First $TETO_LORE) | ForEach-Object { $_.corpo }) -join "`n`n")
+  if ($ligadas.Count -gt 0) {
+    $t += "`n`n### Ligados a eles (nao foram citados, mas importam)`n" + ((@($ligadas) | ForEach-Object { $_.corpo }) -join "`n`n")
+  }
+  $t
 }
 
 # -------------------------------------------------------------- os livros
@@ -535,34 +611,112 @@ O .pdf.txt e um arquivo comum: pode abrir, arrumar o corte e por linhas
 
 # O modelo termina cada resposta com ###FICHA### / ###LORE### / ###DIARIO### / ###FIM###
 # O jogador nao ve esse bloco: ele vira escrita nos arquivos da campanha.
-function AplicarAtualizacao($bloco) {
+function AplicarAtualizacao($bloco, $podeApagar) {
   $mudou = New-Object Collections.ArrayList
   if (-not $bloco) { return $mudou }
 
   $secao = ""
   $ficha = @{}
   $lores = @()
+  $mundo = @()
+  $apagar = @()
   $diario = @()
   foreach ($l in ($bloco -split "`r?`n")) {
     $t = $l.Trim()
     if ($t -match '^###\s*FICHA\s*###$')  { $secao = "ficha";  continue }
     if ($t -match '^###\s*LORE\s*###$')   { $secao = "lore";   continue }
+    if ($t -match '^###\s*MUNDO\s*###$')  { $secao = "mundo";  continue }
+    if ($t -match '^###\s*APAGAR\s*###$') { $secao = "apagar"; continue }
     if ($t -match '^###\s*DIARIO\s*###$') { $secao = "diario"; continue }
     if ($t -match '^###\s*FIM\s*###$')    { $secao = "";       continue }
     if (-not $t -or $t -eq "-") { continue }
     $t = $t -replace '^[-*]\s*', ''
     if ($t -match '^\(?\s*(nada|vazio|nenhum[ao]?|sem mudanca)\s*\)?\.?$') { continue }
+    # o modelo as vezes copia a propria linha de exemplo do formato. nao vira lore.
+    if ($t -match '(?i)palavras-chave separadas|a frase do fato|so os campos que|so FATO NOVO|uma unica frase') { continue }
+    if ($t -match '(?i)^nome\s*\|') { continue }
+    if ($t -match '^\s*\(') { continue }
     switch ($secao) {
       "ficha"  { if ($t -match '^([^:]{1,30}):\s*(.+)$') { $ficha[$Matches[1].Trim().ToLowerInvariant()] = $Matches[2].Trim() } }
       "lore"   { $lores += $t }
+      "mundo"  { $mundo += $t }
+      "apagar" { $apagar += $t }
       "diario" { $diario += $t }
     }
   }
 
+  # --- APAGAR: o retcon. Quando o jogador corrige, o erro tem que SAIR dos
+  # arquivos, nao ficar empilhado embaixo da correcao. Sem isso a mentira
+  # continua sendo lida como verdade em toda jogada seguinte.
+  # APAGAR so quando o JOGADOR corrigiu (modo diretor). Sem essa trava o
+  # anotador apagava lore por conta propria - e apagou a do Gorm num teste.
+  # Retcon e ordem do jogador, nunca iniciativa do modelo.
+  if (-not $podeApagar -and $apagar.Count -gt 0) {
+    Write-Host ("   ignorei " + $apagar.Count + " pedido(s) de APAGAR fora do modo diretor") -ForegroundColor DarkYellow
+    $apagar = @()
+  }
+  foreach ($a in $apagar) {
+    if ($a -notmatch '^\s*(lore|diario|mundo)\s*:\s*(.+)$') { continue }
+    $tipo = $Matches[1].ToLowerInvariant()
+    $alvo = $Matches[2].Trim()
+    if ($alvo.Length -lt 3) { continue }
+    $chave = SemAcento $alvo
+
+    if ($tipo -eq "lore") {
+      foreach ($lf in @(Get-ChildItem -LiteralPath $DirLore -Filter *.md -File -ErrorAction SilentlyContinue)) {
+        $c = Ler $lf.FullName
+        $bate = (SemAcento $lf.BaseName) -eq (Slug $alvo) -or (SemAcento $lf.BaseName).Contains($chave)
+        if (-not $bate) {
+          $mk = [Regex]::Match($c, 'chaves\s*:\s*(.+)')
+          if ($mk.Success) {
+            $ks = @(($mk.Groups[1].Value -split ',') | ForEach-Object { SemAcento $_.Trim() })
+            if ($ks -contains $chave) { $bate = $true }
+          }
+        }
+        if ($bate) {
+          Remove-Item -LiteralPath $lf.FullName -Force
+          [void]$mudou.Add("APAGUEI lore: " + $lf.BaseName)
+        }
+      }
+    }
+    else {
+      $arq = if ($tipo -eq "diario") { Join-Path $Campanha "03-diario.md" } else { Join-Path $Campanha "04-mundo.md" }
+      $txt = Ler $arq
+      if (-not $txt) { continue }
+      $fora = 0
+      $novas = @()
+      foreach ($l in ($txt -split "`r?`n")) {
+        if ($l -match '^\s*-\s' -and (SemAcento $l).Contains($chave)) { $fora++; continue }
+        $novas += $l
+      }
+      if ($fora -gt 0) {
+        Gravar $arq (($novas -join "`n").TrimEnd() + "`n")
+        [void]$mudou.Add("APAGUEI $tipo`: $fora linha(s)")
+      }
+    }
+  }
+
   # --- ficha: mescla chave a chave em campanha/02-personagem.md
+  # SO campo que ja existe na ficha. O modelo copiava numero do exemplo do
+  # prompt ("ouro: 3 po") e inventava campo ("classe: 1") em ficha que nem
+  # tinha classe. Quem define a ficha e o jogador, nao o modelo.
   if ($ficha.Count -gt 0) {
     $pj  = Join-Path $Campanha "02-personagem.md"
     $txt = Ler $pj
+    $atual = @{}
+    foreach ($m in [Regex]::Matches($txt, '(?m)^-\s*([^:\r\n]{1,30})\s*:\s*(.*)$')) {
+      $atual[$m.Groups[1].Value.Trim().ToLowerInvariant()] = $m.Groups[2].Value.Trim()
+    }
+    $recusados = @()
+    foreach ($k in @($ficha.Keys)) {
+      # campo inexistente na ficha, ou com o mesmo valor de antes, nao e mudanca.
+      # O anotador vinha devolvendo a ficha inteira e sujando o "gravou:".
+      if (-not $atual.ContainsKey($k)) { $ficha.Remove($k); $recusados += $k; continue }
+      if ((SemAcento $atual[$k]) -eq (SemAcento $ficha[$k])) { $ficha.Remove($k) }
+    }
+    if ($recusados.Count -gt 0) { Write-Host ("   ficha: ignorei campo inexistente -> " + ($recusados -join ", ")) -ForegroundColor DarkGray }
+  }
+  if ($ficha.Count -gt 0) {
     foreach ($k in $ficha.Keys) {
       $rx   = "(?im)^-\s*" + [Regex]::Escape($k) + "\s*:.*$"
       $nova = ("- {0}: {1}" -f $k, $ficha[$k]).Replace('$', '$$')
@@ -632,15 +786,45 @@ function AplicarAtualizacao($bloco) {
     [void]$mudou.Add("lore: $nome")
   }
 
+  # --- mundo: o que aconteceu LONGE do jogador. E o que faz a campanha
+  # continuar existindo quando ele nao esta olhando.
+  if ($mundo.Count -gt 0) {
+    $mj = Join-Path $Campanha "04-mundo.md"
+    $txt = (Ler $mj).TrimEnd()
+    if (-not $txt) { $txt = "# O mundo enquanto voce nao olha`n`n> Escrito pelo Mestre. Cada linha e algo que aconteceu sem o jogador presente." }
+    $recentes = @(($txt -split "`r?`n") | Where-Object { $_ -match '^\s*-\s' } |
+                  Select-Object -Last 6 | ForEach-Object { $_ -replace '^\s*-\s*\[[^\]]*\]\s*','' })
+    $carimbo = Get-Date -Format "dd/MM HH:mm"
+    $novos = 0
+    foreach ($m in $mundo) {
+      if (EhRepetido $m $recentes) { continue }
+      $txt += "`n- [$carimbo] $m"
+      $recentes += $m
+      $novos++
+    }
+    Gravar $mj ($txt + "`n")
+    if ($novos -gt 0) { [void]$mudou.Add("mundo: " + $novos) }
+  }
+
   # --- diario: sempre append, nunca reescreve
   if ($diario.Count -gt 0) {
     $dj  = Join-Path $Campanha "03-diario.md"
     $txt = (Ler $dj).TrimEnd()
     if ($txt -notmatch '(?m)^\s*-\s') { $txt += "`n" }
     $carimbo = Get-Date -Format "dd/MM HH:mm"
-    foreach ($d in $diario) { $txt += "`n- [$carimbo] $d" }
+    # o modelo repete a ultima linha com frequencia. entrada igual a alguma das
+    # 5 ultimas nao entra: diario com a mesma frase tres vezes nao lembra nada.
+    $recentes = @(($txt -split "`r?`n") | Where-Object { $_ -match '^\s*-\s' } |
+                  Select-Object -Last 5 | ForEach-Object { $_ -replace '^\s*-\s*\[[^\]]*\]\s*','' })
+    $novas = 0
+    foreach ($d in $diario) {
+      if (EhRepetido $d $recentes) { continue }
+      $txt += "`n- [$carimbo] $d"
+      $recentes += $d
+      $novas++
+    }
     Gravar $dj ($txt + "`n")
-    [void]$mudou.Add("diario: " + $diario.Count)
+    if ($novas -gt 0) { [void]$mudou.Add("diario: " + $novas) }
   }
 
   $mudou
