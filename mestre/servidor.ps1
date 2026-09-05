@@ -833,63 +833,923 @@ function AplicarAtualizacao($bloco, $podeApagar) {
 # ------------------------------------------------------- montagem do prompt
 
 $FORMATO = @'
+===================== SUA RESPOSTA =====================
 
-# COMO TERMINAR TODA RESPOSTA (obrigatorio)
+Duas partes, sempre, nesta ordem.
 
-Depois da narracao, escreva o bloco abaixo. O jogador NAO ve esse bloco: ele grava os
-arquivos da campanha. Nunca comente sobre ele. Nunca escreva nada depois do ###FIM###.
+1) A CENA. Comece direto pela narracao, sem titulo e sem "##".
+   Frases curtas, em batidas. Uma ideia por linha.
+   Fala de NPC entre aspas, com a reacao dele: quem esta com raiva soa com
+   raiva, quem deve favor hesita, quem foi traido cobra.
+   Termine com o que o jogador percebe agora.
+
+2) O BLOCO, logo depois, sem comentario. O jogador nao ve. Obrigatorio em
+   toda resposta, mesmo vazio.
 
 ###FICHA###
-so os campos que MUDARAM nesta jogada, um por linha, formato  campo: valor
-(use exatamente os mesmos nomes que ja existem na Ficha do personagem: pv, ouro,
-condicoes, nivel, ca, nome, classe, inventario)
+campo: valor  (so campo que JA EXISTE na ficha, so o que mudou nesta cena)
 ###LORE###
-so FATO NOVO e permanente do mundo, um por linha, formato:
-Nome | palavras-chave separadas por virgula | a frase do fato
-(pessoa, lugar, segredo, divida, promessa, inimizade. Nada de acao passageira aqui.)
+Nome | chaves | o fato novo. Use [[Nome]] pra ligar a quem ja existe.
+###MUNDO###
+o que andou longe do jogador. Quase sempre vazio.
 ###DIARIO###
-uma unica frase, no passado, resumindo o que de fato aconteceu nesta jogada
+uma frase, no passado, do que aconteceu agora.
 ###FIM###
 
-Secao sem novidade fica vazia. Nunca invente numero de ficha que o jogador nao
-ganhou nem perdeu na cena. Nunca repita na LORE um fato que ja esta escrito.
+=================== NAO INVENTE CANONE ===================
+
+Se um nome, lugar, data ou fato NAO esta no material de consulta, voce nao
+sabe. Nao escolha um. Diga, com o rotulo Mestre:, que aquilo ainda nao esta
+registrado, e pergunte ao jogador ou deixe vago na narracao.
+
+  Mestre: o nome desse capanga ainda nao esta registrado. Quer batizar ele,
+  ou sigo como "o da cicatriz"?
+
+Inventar vira canone errado, e duas cenas depois a historia nao fecha.
+Use o rotulo Mestre: sempre que precisar falar fora da ficcao - duvida,
+regra, ou aviso. Fora isso, so narracao.
+
+--- exemplo curto do formato ---
+O carregador fecha a porta com o ombro.
+
+[Atletismo: 7 + 2 = 9 vs 15 -> falha, a porta bate no seu ombro]
+
+A madeira range. "Sai daqui", ele rosna do outro lado, sem forca na voz.
+Passos vem do beco.
+###FICHA###
+pv: 21/24
+###LORE###
+Marta Cinza | marta, taverneira | Dona da taverna em [[Vallengard]]. Quer comprar o armazem do vizinho.
+###MUNDO###
+###DIARIO###
+O grupo travou a porta do armazem e ouviu passos no beco.
+###FIM###
+--- fim ---
 '@
 
 $MODO_DIRETOR = @'
+ATENCAO: a mensagem a seguir NAO e o personagem falando. E o jogador falando
+com voce por fora da ficcao, corrigindo alguma coisa.
 
-ATENCAO: a mensagem a seguir NAO e o personagem falando. E o jogador falando com voce
-por fora da ficcao, corrigindo alguma coisa. Nao narre resposta pra ela como se fosse
-cena. Acate a correcao, ajuste o que precisar nos arquivos pelo bloco do fim, e siga
-a cena de onde parou em uma ou duas frases.
+Nao narre cena pra ela. Acate a correcao, responda curto com o rotulo Mestre:,
+e siga de onde parou em uma ou duas frases.
+
+Se voce escreveu algo errado nos arquivos, DESFACA. Use a secao ###APAGAR###
+do bloco, uma linha por item:
+
+  lore: Nome da entrada que estava errada
+  diario: um trecho da frase que deve sair
+  mundo: um trecho do evento que deve sair
+
+Depois grave a versao certa em ###LORE### ou ###DIARIO### normalmente.
+Apagar e reescrever e melhor que empilhar correcao em cima do erro.
 '@
 
-function MontarMensagens($entrada, $diretor) {
+function MontarMensagens($entrada, $diretor, $mecanica) {
   $recente = (($Historico | Select-Object -Last 8 | ForEach-Object { $_.texto }) -join " ")
   $lore = LoreRelevante ($recente + " " + $entrada)
 
-  $sistema  = (Ler (Join-Path $Campanha "00-mestre.md")) + "`n`n"
-  $sistema += "# O Mundo`n" + (Ler (Join-Path $Campanha "01-mundo.md")) + "`n`n"
-  $sistema += "# O personagem do jogador`n" + (Ler (Join-Path $Campanha "02-personagem.md")) + "`n`n"
-  if ($lore) { $sistema += $lore + "`n`n" }
+  # Detecta cena de risco pelo que foi dito. Serve pra duas coisas: mandar o
+  # Mestre rolar, e ALIMENTAR A BUSCA nos livros. O jogador escreve "saco a
+  # lanca e parto pra cima" - nenhuma palavra dessa frase e "iniciativa", entao
+  # a secao de iniciativa existia no indice e nunca era encontrada.
+  $chaveiro = SemAcento ($recente + " " + $entrada)
+  $emRisco = $chaveiro -match 'atac|ataqu|lanca|espada|adaga|escudo|golpe|briga|luta|combat|cerca|agarr|derrub|empurr|esquiv|furtiv|escond|arromb|escal|salt|convenc|intimid|persuad|resist|veneno|armadilh|queda|fug'
+  $buscaLivros = $recente + " " + $entrada
+  if ($emRisco) {
+    $buscaLivros += " iniciativa surpresa combate ataque ataques dano critico turno acao rolagem teste dificuldade condicoes defesa"
+  }
 
-  # regras do sistema: so as secoes citadas, com teto de tamanho
-  $regras = RegrasRelevantes ($recente + " " + $entrada) 2600
-  if ($regras) { $sistema += $regras + "`n`n" }
+  # ORDEM IMPORTA. O material de consulta vai no MEIO, cercado, e a ordem do que
+  # fazer vem por ultimo. Quando os documentos ficavam soltos com titulos markdown,
+  # o modelo reconhecia o formato e CONTINUAVA o documento em vez de narrar -
+  # devolvia o cenario reescrito no lugar da cena.
+  $sistema = (Ler (Join-Path $Campanha "00-mestre.md")).Trim() + "`n`n"
 
-  # o diario e a memoria longa: entram so as ultimas entradas
-  $diario = (((Ler (Join-Path $Campanha "03-diario.md")) -split "`r?`n") | Where-Object { $_ -match '^\s*-\s' } | Select-Object -Last 25) -join "`n"
-  if ($diario) { $sistema += "# O que ja aconteceu (do mais antigo pro mais recente)`n$diario`n`n" }
+  $consulta = ""
+  $consulta += "[MUNDO]`n" + (Ler (Join-Path $Campanha "01-mundo.md")).Trim() + "`n`n"
+  $consulta += "[FICHA DO JOGADOR]`n" + (Ler (Join-Path $Campanha "02-personagem.md")).Trim() + "`n`n"
+  if ($lore) { $consulta += "[LORE]`n" + $lore.Trim() + "`n`n" }
 
-  $sistema += $FORMATO
-  if ($diretor) { $sistema += "`n" + $MODO_DIRETOR }
+  $regras = RegrasRelevantes $buscaLivros 2400
+  if ($regras) { $consulta += "[REGRAS]`n" + $regras.Trim() + "`n`n" }
+
+  $diario = (((Ler (Join-Path $Campanha "03-diario.md")) -split "`r?`n") | Where-Object { $_ -match '^\s*-\s' } | Select-Object -Last 22) -join "`n"
+  if ($diario) { $consulta += "[O QUE JA ACONTECEU]`n" + $diario.Trim() + "`n`n" }
+
+  $mundo = (((Ler (Join-Path $Campanha "04-mundo.md")) -split "`r?`n") | Where-Object { $_ -match '^\s*-\s' } | Select-Object -Last 12) -join "`n"
+  if ($mundo) { $consulta += "[O QUE ANDOU SEM O JOGADOR]`n" + $mundo.Trim() + "`n`n" }
+
+  $sistema += @"
+================== INICIO DO MATERIAL DE CONSULTA ==================
+Isto e a sua ficha de anotacoes. Serve pra voce SABER as coisas.
+Nao e um texto pra continuar, completar, reescrever nem repetir.
+NUNCA devolva nenhuma parte disto na sua resposta.
+--------------------------------------------------------------------
+
+$($consulta.TrimEnd())
+
+--------------------------------------------------------------------
+=================== FIM DO MATERIAL DE CONSULTA ====================
+
+"@
+
+  if ($diretor) { $sistema += $MODO_DIRETOR + "`n" }
+
+  # BRIGA. Um modelo pequeno narra combate como ficcao pura: ninguem rola nada,
+  # ninguem tem numero. Quando a cena vira briga, a ordem de rolar tem que ser
+  # explicita e estar perto do fim do prompt, senao ele so descreve.
+  # Se a calculadora ja resolveu, o narrador nao rola nada: so descreve.
+  if ($emRisco -and -not $mecanica) {
+    $dados = $script:DadosDaVez
+    $sistema += @'
+
+## TEM RISCO NESTA CENA
+
+Voce NAO sabe rolar dado. Entao eu rolei por voce. Estes sao os resultados de
+1d20 desta cena, ja sorteados, em ordem:
+
+  __DADOS__
+
+Use um por rolagem, NA ORDEM, sem pular e sem trocar. Se precisar de mais,
+peca ao jogador pra rolar.
+
+Formato da linha, entre colchetes:
+  [nome da pericia ou defesa: DADO + modificador da ficha = total vs alvo -> resultado]
+
+O dado e o numero que eu te dei. O modificador vem da ficha. O alvo vem das
+regras do material. Se o total nao alcanca o alvo, FALHA - e falha e bom,
+narre a consequencia ruim. Cena de risco onde tudo da certo e cena sem risco.
+
+Comecou briga? A primeira rolagem e a iniciativa de cada participante, uma
+linha por criatura, e depois a ordem de acao. Ataque enfrenta a defesa que as
+regras do material mandam, com o nome que elas usam.
+
+'@
+    $sistema = $sistema.Replace('__DADOS__', $dados)
+  }
+  if ($mecanica) {
+    $sistema += "`n## JA RESOLVIDO NOS DADOS`nO juiz da mesa ja rolou tudo. Isto ACONTECEU:`n`n" + $mecanica + "`n`nNarre exatamente este resultado. Nao mude numero, nao mude quem acertou ou`nfalhou, nao invente rolagem nova. Mostre as linhas entre colchetes na cena.`n"
+  }
+
+  # O RELOGIO. Um modelo pequeno nunca toma a iniciativa de mexer no mundo
+  # sozinho: ele so reage ao jogador. Entao de tempos em tempos a gente MANDA.
+  # Sem isso os NPCs ficam congelados esperando ser citados.
+  $jogadas = [math]::Floor($Historico.Count / 2)
+  if (-not $diretor -and $jogadas -ge 2 -and ($jogadas % 3) -eq 0) {
+    $sistema += @'
+
+## O MUNDO ANDOU
+Escolha UM NPC que ja existe e tinha algo pendente, e faca a agenda dele andar
+longe do jogador: cobrou a divida, quebrou a promessa, mudou de lado, sumiu.
+Nao invente gente nova.
+
+O jogador nao viu. Ele descobre pelo rastro - porta fechada, comentario de
+terceiro, lugar diferente. Narre o que ele ENCONTRA, nao a cena que passou.
+Anote no ###MUNDO###.
+
+'@
+  }
+
+  # O FORMATO fica por ULTIMO, de proposito. Numa versao anterior o prompt
+  # terminava com "responda APENAS com a cena" e o modelo obedecia ao pe da
+  # letra: narrava bem e nunca escrevia o bloco de memoria. O que vem por
+  # ultimo pesa mais, entao o que vem por ultimo tem que ser a resposta inteira.
+  # O FORMATO do bloco NAO entra aqui. Narrar e anotar sao duas tarefas, e um
+  # modelo de 4B so faz uma bem por vez: toda vez que as duas vieram juntas,
+  # uma comeu a outra. A anotacao vira uma segunda chamada, curta e separada.
+  $sistema += @'
+
+## O PERSONAGEM DO JOGADOR E SO DELE
+
+Voce NUNCA fala pelo personagem do jogador. Nunca escreve fala dele entre
+aspas. Nunca diz o que ele sente, pensa, decide, percebe por dentro ou como
+reage. Nunca resolve a acao dele sozinho nem emenda a proxima acao por ele.
+
+Ele disse o que faz. Voce narra o MUNDO respondendo aquilo, e para.
+
+  ERRADO: __JOGADOR__- deixem ele em paz!   <- nunca escreva o nome dele na frente
+  ERRADO: "Deixem-no em paz!", voce grita, avancando furioso.
+  ERRADO: Voce percebe que e uma armadilha e recua.
+  ERRADO: Voce decide confiar nele.
+  CERTO:  O capanga trava o passo. A mao dele ainda esta no cabo da adaga,
+          e ele espera voce falar primeiro.
+
+Quem tem fala sao os NPCs. Quem tem vontade propria sao os NPCs. O personagem
+do jogador so faz o que o jogador escreveu, nada alem disso.
+
+Quando a vez volta pra ele, PARE. Deixe a cena aberta.
+
+## VOCE JOGA OS NPCS
+
+O aliado nao espera ordem. Ele esta na cena e age por conta propria, do jeito
+dele. Monstro atacou o jogador? Ele reage, obvio. O jogador nunca precisa
+dizer o que o aliado faz - quem joga com o aliado e VOCE.
+
+Cada NPC tem um "Quer:" e "Lacos:" na ficha. E de la que sai a acao dele, nao
+da conveniencia da cena. Eles discordam, discutem, hesitam, fazem besteira,
+mentem e as vezes atrapalham.
+
+Se o jogador mandar o aliado fazer algo, isso e um PEDIDO. O aliado atende se
+quiser. Contra o que ele ama, deve ou teme, provavelmente nao atende.
+
+## CADA UM FALA DO JEITO DELE
+
+Toda ficha traz "Voz:" e "Fala assim:". Copie o REGISTRO do "Fala assim" -
+o tamanho da frase, o palavrao, a gramatica torta, o jeito de chamar as
+pessoas. Nao e enfeite: e como aquela pessoa abre a boca.
+
+O erro que voce vai querer cometer e por todo mundo falando o mesmo portugues
+correto de narrador. Nao faca isso.
+
+  ERRADO: uma adolescente com raiva dizendo "Fique quieto!"
+  CERTO:  "cala a boca, porra" - que e como ela fala de verdade
+
+  ERRADO: um capitao velho dizendo "vamo nessa"
+  CERTO:  "Formacao. Agora."
+
+Se a ficha nao tiver "Fala assim", deduza do "Voz:", da idade e de onde a
+pessoa foi criada. Um NPC que fala igual ao Mestre e um NPC que voce errou.
+
+## TODA FALA LEVA O NOME NA FRENTE
+
+Fala e sempre uma linha propria: o nome de quem falou, um traco, e o que a
+pessoa diz. Cada ficha tem um "Fala assim:" que ja mostra a linha pronta
+daquele personagem - siga aquele modelo, com o nome dele.
+
+Nao existe fala solta. Se voce nao sabe quem falou, ninguem falou - corte.
+A narracao continua normal, em linha separada, sem nome na frente.
+
+## AGORA
+Narre a cena. So a cena, na voz do Mestre, em portugues.
+Comece direto, sem titulo e sem cabecalho. Frases curtas, em batidas.
+Termine com o que esta na frente dele agora - e pare ai.
+'@
+
+  # O nome do personagem sai da ficha, nunca cravado no codigo: cada campanha
+  # tem o seu. Sem isso o exemplo ensinaria o modelo o nome errado.
+  $nomePj = if ((Ler (Join-Path $Campanha '02-personagem.md')) -match '(?im)^\s*-\s*nome\s*:\s*(.+)$') { $Matches[1].Trim() } else { '' }
+  $primeiroPj = if ($nomePj) { ($nomePj -split '\s+')[0] } else { 'o personagem' }
+  $sistema = $sistema.Replace('__JOGADOR__', $primeiroPj)
+  if ($nomePj) {
+    $sistema += "`n## O NOME QUE VOCE NUNCA USA NA FRENTE DE UMA FALA`n" +
+                "$primeiroPj`n`nEsse e o personagem do jogador. Todos os outros nomes podem abrir fala.`n"
+  }
 
   $msgs = New-Object Collections.ArrayList
   [void]$msgs.Add(@{ role = "system"; content = $sistema })
-  foreach ($h in ($Historico | Select-Object -Last $MaxHist)) {
-    [void]$msgs.Add(@{ role = [string]$h.papel; content = [string]$h.texto })
+
+  # As duas ultimas respostas do Mestre voltam COM o bloco de memoria colado.
+  # Sem isso o modelo olha pro proprio historico, ve respostas sem bloco, e
+  # imita a si mesmo: escrevia o bloco na primeira jogada e parava nas seguintes.
+  # Exemplo do proprio modelo vale mais que instrucao.
+  $janela = @($Historico | Select-Object -Last $MaxHist)
+  $comBloco = New-Object Collections.Generic.HashSet[int]
+  $achei = 0
+  for ($k = $janela.Count - 1; $k -ge 0 -and $achei -lt 2; $k--) {
+    if ([string]$janela[$k].papel -eq "assistant" -and [string]$janela[$k].bloco) {
+      [void]$comBloco.Add($k); $achei++
+    }
   }
-  [void]$msgs.Add(@{ role = "user"; content = $entrada })
+  for ($k = 0; $k -lt $janela.Count; $k++) {
+    $h = $janela[$k]
+    $txt = [string]$h.texto
+    if ($comBloco.Contains($k)) { $txt = $txt.TrimEnd() + "`n" + ([string]$h.bloco).Trim() }
+    [void]$msgs.Add(@{ role = [string]$h.papel; content = $txt })
+  }
+  # AS REGRAS DURAS VAO POR ULTIMO, depois da jogada.
+  #
+  # Isto e o \"post-history instruction\" / \"author's note em profundidade 0\" que o
+  # pessoal de SillyTavern usa: quanto mais perto do fim do prompt, mais peso a
+  # instrucao tem. Antes essas regras estavam no prompt de sistema, la em cima -
+  # e entre elas e a hora de escrever passavam lorebook, fichas e historico. Um
+  # modelo de 4B chegava no fim sem lembrar de nenhuma, e cada regra nova que eu
+  # somava derrubava outra. Nao era falta de capacidade, era distancia.
+  #
+  # Por isso aqui e CURTO. Cinco linhas. Se crescer, volta a nao valer nada.
+  $duras = New-Object Text.StringBuilder
+  [void]$duras.AppendLine("Antes de escrever, as cinco regras da casa:")
+  [void]$duras.AppendLine("")
+  if ($primeiroPj -ne 'o personagem') {
+    [void]$duras.AppendLine("1. NUNCA comece uma frase com $primeiroPj. Ele so pode aparecer dentro da")
+    [void]$duras.AppendLine("   fala de outra pessoa. Voce narra o mundo, nunca o que ele faz ou sente.")
+  } else {
+    [void]$duras.AppendLine("1. O personagem do jogador e dele. So o que ele escreveu acima aconteceu.")
+  }
+  [void]$duras.AppendLine("2. Os aliados agem sozinhos, no turno deles, sem esperar ordem.")
+  [void]$duras.AppendLine("3. Toda fala e uma linha comecando por Nome- e o jeito de falar daquela pessoa.")
+  [void]$duras.AppendLine("4. Frases curtas, mas narre a cena inteira: 3 a 6 linhas. Nao repita o que ja esta acima.")
+  [void]$duras.AppendLine("5. Termine SEMPRE com esta linha, sozinha, e nao escreva mais nada depois:")
+  [void]$duras.AppendLine("   Mestre: o que $primeiroPj diz ou faz?")
+  # Coladas NA MENSAGEM DO JOGADOR, nao como mensagem 'system' propria: o
+  # template de chat do Gemma nao tem papel system, e o Ollama funde system la
+  # pra cima - o que jogava a regra de volta pra longe, que e o bug que eu
+  # estava tentando consertar. O SillyTavern faz igual: injecao no papel user.
+  [void]$msgs.Add(@{ role = "user"; content = ($entrada + "`n`n---`n" + $duras.ToString().TrimEnd()) })
+
   , $msgs
+}
+
+$EXTRATOR = @'
+Voce e um anotador de mesa de RPG. Nao narra, nao inventa, nao opina.
+
+Vou te dar a ficha atual do personagem e a cena que acabou de acontecer.
+Sua unica tarefa e devolver o bloco abaixo, exatamente neste formato, e nada
+mais. Sem comentario, sem titulo, sem explicacao.
+
+###FICHA###
+campo: valor
+###LORE###
+Nome | palavras-chave | o fato
+###MUNDO###
+o que aconteceu longe do personagem
+###APAGAR###
+lore: nome     (ou)     diario: trecho
+###DIARIO###
+uma frase no passado
+###FIM###
+
+REGRAS DURAS
+
+FICHA: so campo que ja aparece na ficha que eu te mandei, e so se a cena
+disser que mudou. Perdeu vida? escreva o pv novo. Nada mudou? deixe vazio.
+Nunca invente campo. Nunca copie numero de exemplo.
+
+LORE: so pessoa, lugar ou fato PERMANENTE que apareceu com nome proprio na
+cena. Use [[Nome]] pra citar quem ja existe. Acao passageira nao vai aqui.
+
+MUNDO: so o que aconteceu longe do personagem. Quase sempre vazio.
+
+APAGAR: so quando a cena disser explicitamente que algo anterior estava errado.
+
+DIARIO: uma frase, no passado, do que aconteceu nesta cena. Sempre preenchido.
+
+Secao sem nada fica vazia, mas os seis marcadores aparecem sempre.
+'@
+
+
+# Segunda chamada: le a cena que acabou de ser narrada e devolve so o bloco.
+# Prompt minusculo, uma tarefa so. Narrar e anotar na mesma chamada nunca
+# funcionou num modelo de 4B: a instrucao mais recente sempre comia a outra.
+function PedirBloco([string]$narracao) {
+  if (-not $narracao -or $narracao.Length -lt 40) { return "" }
+  $ficha = Ler (Join-Path $Campanha "02-personagem.md")
+  $campos = @([Regex]::Matches($ficha, '(?m)^-\s*([^:\r\n]{1,30})\s*:\s*(.*)$') |
+              ForEach-Object { "- " + $_.Groups[1].Value.Trim() + ": " + $_.Groups[2].Value.Trim() }) -join "`n"
+
+  $pedido = "FICHA ATUAL`n$campos`n`nCENA QUE ACABOU DE ACONTECER`n$narracao`n`nDevolva o bloco."
+  $msgs = @(
+    @{ role = "system"; content = $EXTRATOR },
+    @{ role = "user";   content = $pedido }
+  )
+  $payload = ConvertTo-Json @{
+    model = $Cfg.modelo; messages = $msgs; stream = $false
+    options = @{ temperature = 0.2; num_ctx = [int]$Cfg.contexto; num_predict = 400 }
+    keep_alive = "30m"
+  } -Depth 8
+
+  try {
+    $r = [Net.HttpWebRequest]::Create("$Ollama/api/chat")
+    $r.Method = "POST"; $r.ContentType = "application/json"
+    $r.Timeout = 300000; $r.ReadWriteTimeout = 300000
+    $pb = $UTF8.GetBytes($payload); $r.ContentLength = $pb.Length
+    $os = $r.GetRequestStream(); $os.Write($pb, 0, $pb.Length); $os.Close()
+    $resp = (New-Object IO.StreamReader($r.GetResponse().GetResponseStream(), [Text.Encoding]::UTF8)).ReadToEnd() | ConvertFrom-Json
+    $b = [string]$resp.message.content
+    $k = AcharBloco $b
+    if ($k -ge 0) { return $b.Substring($k) }
+    return ""
+  } catch {
+    Write-Host ("   extrator falhou: " + $_.Exception.Message) -ForegroundColor DarkYellow
+    return ""
+  }
+}
+
+
+
+# --------------------------------------------------------------- a forja
+#
+# A Tabua de Kleos e o motor de criacao de monstros do sistema Ascensao dos
+# Semideuses. E aritmetica exata, entao QUEM CALCULA E O SERVIDOR. O modelo so
+# decide as duas coisas que sao julgamento: qual degrau (Kleos) e qual
+# arquetipo. Pedir "+30% de PV sobre 115" pra um 4B e pedir erro.
+
+$TABUA_KLEOS = @{
+  1  = @{ pv = 11;  def = 12; atq = 3;  dano = 5;   efeito = 3;  forte = 17; fraca = 14; ataques = 1 }
+  2  = @{ pv = 22;  def = 13; atq = 4;  dano = 9;   efeito = 4;  forte = 18; fraca = 15; ataques = 1 }
+  3  = @{ pv = 36;  def = 14; atq = 5;  dano = 14;  efeito = 5;  forte = 19; fraca = 15; ataques = 2 }
+  4  = @{ pv = 55;  def = 15; atq = 6;  dano = 20;  efeito = 6;  forte = 20; fraca = 16; ataques = 2 }
+  5  = @{ pv = 80;  def = 16; atq = 7;  dano = 27;  efeito = 7;  forte = 21; fraca = 16; ataques = 2 }
+  6  = @{ pv = 115; def = 17; atq = 8;  dano = 35;  efeito = 8;  forte = 22; fraca = 17; ataques = 2 }
+  7  = @{ pv = 155; def = 17; atq = 9;  dano = 45;  efeito = 9;  forte = 23; fraca = 17; ataques = 3 }
+  8  = @{ pv = 210; def = 18; atq = 10; dano = 56;  efeito = 10; forte = 24; fraca = 18; ataques = 3 }
+  9  = @{ pv = 280; def = 19; atq = 11; dano = 70;  efeito = 11; forte = 25; fraca = 18; ataques = 3 }
+  10 = @{ pv = 370; def = 20; atq = 13; dano = 88;  efeito = 13; forte = 27; fraca = 19; ataques = 3 }
+  11 = @{ pv = 500; def = 21; atq = 15; dano = 110; efeito = 15; forte = 29; fraca = 20; ataques = 4 }
+}
+
+# Arquetipo troca numeros entre si sem mudar o Kleos.
+$ARQUETIPOS = @{
+  "bruto"       = @{ pv = 1.30; def = -1; ataques =  0; dano = 1.00; nota = "concentra o dano num ataque grande" }
+  "veloz"       = @{ pv = 0.75; def =  1; ataques = +1; dano = 1.00; nota = "chega antes e sai antes, +3 m de movimento" }
+  "blindado"    = @{ pv = 0.75; def =  2; ataques =  0; dano = 1.00; nota = "dificil de acertar, comum ser imune a veneno e efeito mental" }
+  "conjurador"  = @{ pv = 1.00; def =  0; ataques =  0; dano = 0.60; nota = "bate pouco e muda o campo; usa Efeito contra defesa passiva" }
+  "sombra"      = @{ pv = 0.80; def =  0; ataques =  0; dano = 1.00; nota = "resiste a dano fisico nao-divino; atravessa, some ou nao pode ser agarrada" }
+  "colosso"     = @{ pv = 1.50; def = -2; ataques =  0; dano = 1.00; nota = "ocupa espaco, atinge varios alvos, nao pode ser agarrado nem derrubado" }
+  "enxame"      = @{ pv = 1.00; def =  0; ataques =  0; dano = 1.00; nota = "sao muitos: 3 a 6 criaturas de Kleos -2" }
+}
+
+function ForjarCriatura($nome, $kleos, $arquetipo, $fortes, $chaves) {
+  $k = [int]$kleos
+  if ($k -lt 1) { $k = 1 }
+  if ($k -gt 11) { $k = 11 }
+  $b = $TABUA_KLEOS[$k]
+
+  $a = $null
+  $an = ""
+  if ($arquetipo) {
+    $an = (SemAcento $arquetipo).Trim()
+    if ($ARQUETIPOS.ContainsKey($an)) { $a = $ARQUETIPOS[$an] }
+  }
+  if (-not $a) { $a = @{ pv = 1.00; def = 0; ataques = 0; dano = 1.00; nota = "" }; $an = "" }
+
+  $pv   = [int][Math]::Round($b.pv * $a.pv)
+  $def  = $b.def + $a.def
+  $nAtq = [Math]::Max(1, $b.ataques + $a.ataques)
+  $dano = [int][Math]::Round($b.dano * $a.dano)
+  $porAtq = [Math]::Max(1, [int][Math]::Round($dano / $nAtq))
+
+  # duas defesas fortes e uma fraca; o modelo escolhe quais
+  $todas = @("Fortitude", "Reflexos", "Vontade")
+  $ft = @()
+  if ($fortes) { $ft = @(($fortes -split '[,;/ ]+') | ForEach-Object { $_.Trim() } | Where-Object { $todas -contains $_ }) }
+  if ($ft.Count -lt 2) { $ft = @("Fortitude", "Vontade") }
+  $ft = @($ft | Select-Object -First 2)
+  $fr = @($todas | Where-Object { $ft -notcontains $_ })[0]
+
+  $ks = if ($chaves) { $chaves } else { $nome }
+  $linhas = New-Object Collections.ArrayList
+  $rot = "kleos $k"
+  if ($an) { $rot = $rot + ", " + $arquetipo }
+  [void]$linhas.Add($rot)
+  [void]$linhas.Add("VIDA: $pv PV")
+  [void]$linhas.Add("PRA ACERTAR ELE: o ataque precisa alcancar DEF $def")
+  [void]$linhas.Add("PRA AFETAR COM EFEITO: $($ft[0]) $($b.forte), $($ft[1]) $($b.forte), $fr $($b.fraca) - o ponto fraco e $fr")
+  [void]$linhas.Add("QUANDO ELE ATACA: d20 +$($b.atq) contra a DEF do alvo. Acertou, $porAtq de dano. $nAtq ataque(s) por acao.")
+  [void]$linhas.Add("QUANDO ELE USA EFEITO: d20 +$($b.efeito) contra a defesa passiva do alvo.")
+  if ($a.nota) { [void]$linhas.Add("tatica: " + $a.nota) }
+
+  $selo = "Kleos $k"
+  if ($an) { $selo = $selo + ", " + $arquetipo }
+
+  [pscustomobject]@{
+    nome = $nome
+    chaves = $ks
+    texto = "---`nchaves: $ks`n---`n**$nome**`n" + (($linhas) -join "`n") + "`n"
+    resumo = "$nome ($selo): $pv PV, DEF $def, ataque +$($b.atq), $porAtq de dano por golpe"
+  }
+}
+
+
+
+# ------------------------------------------------------ resolvedor de combate
+#
+# O modelo decide INTENCAO ("Kyros ataca o Capanga A com a lanca"). A conta e
+# aqui. Ja tiramos o dado e a Tabua de Kleos das maos dele e funcionou nas duas
+# vezes; carregar DEF 13 -> 8 PV -> 2 de dano por quatro operacoes e a terceira
+# coisa que ele nao sustenta.
+
+$script:Combate = $null   # @{ vivos = @{ nome = @{ pv; max; ficha } } }
+
+function _numDe($txt, $rx) {
+  $m = [Regex]::Match($txt, $rx)
+  if ($m.Success) { [int]$m.Groups[1].Value } else { $null }
+}
+
+# Le uma ficha (jogador, aliado ou criatura) e devolve os numeros que importam.
+function LerFicha($nome, $texto, $ehJogador) {
+  $def = _numDe $texto '(?im)(?:alcancar\s+DEF|^\s*-?\s*def)\s*:?\s*(\d+)'
+  $pv  = _numDe $texto '(?im)(?:VIDA:\s*|^\s*-?\s*pv\s*:\s*)(\d+)'
+  $atq = _numDe $texto '(?im)QUANDO EL[EA] ATACA:\s*d20\s*\+(\d+)'   # ELE ou ELA
+  $dano = _numDe $texto '(?im)Acertou,\s*(\d+)\s*de dano'
+  $n   = _numDe $texto '(?im)(\d+)\s*ataque\(s\) por acao'
+  if ($ehJogador) {
+    # ficha de personagem: o bonus de ataque sai da destreza ou forca
+    $dex = _numDe $texto '(?im)^\s*-\s*destreza\s*:\s*\+?(\d+)'
+    $for = _numDe $texto '(?im)^\s*-\s*forca\s*:\s*\+?(\d+)'
+    if ($null -eq $atq) { $atq = [Math]::Max([int]$dex, [int]$for) }
+    if ($null -eq $dano) { $dano = 4 + [int]$for }
+    if ($null -eq $n) { $n = 1 }
+  }
+  [pscustomobject]@{
+    nome = $nome
+    def  = if ($def)  { $def }  else { 12 }
+    pv   = if ($pv)   { $pv }   else { 10 }
+    atq  = if ($atq)  { $atq }  else { 2 }
+    dano = if ($dano) { $dano } else { 3 }
+    ataques = if ($n) { $n } else { 1 }
+  }
+}
+
+# Monta o elenco da cena: jogador, aliados e criaturas citadas.
+function ElencoDaCena($texto) {
+  $elenco = @{}
+  $fj = Ler (Join-Path $Campanha "02-personagem.md")
+  $nomeJog = if ($fj -match '(?im)^\s*-\s*nome\s*:\s*(.+)$') { $Matches[1].Trim() } else { "o personagem" }
+  $fichaJog = LerFicha $nomeJog $fj $true
+  $fichaJog | Add-Member -NotePropertyName lado -NotePropertyValue 'jogador' -Force
+  $elenco[$nomeJog] = $fichaJog
+
+  foreach ($d in @($DirAliados, $DirCriaturas)) {
+    if (-not (Test-Path -LiteralPath $d)) { continue }
+    $soCitadas = ($d -eq $DirCriaturas)
+    $alvo = SemAcento $texto
+    foreach ($f in (Get-ChildItem -LiteralPath $d -Filter *.md -File)) {
+      if ($f.BaseName -like "LEIA-ME*") { continue }
+      $c = Ler $f.FullName
+      $chaves = @(SemAcento $f.BaseName)
+      if ($c -match '(?s)^---\s*\r?\n(.*?)\r?\n---\s*\r?\n') {
+        if ($Matches[1] -match 'chaves\s*:\s*(.+)') {
+          $chaves = @(($Matches[1] -split ',') | ForEach-Object { SemAcento $_.Trim() } | Where-Object { $_ })
+        }
+      }
+      $entra = -not $soCitadas
+      if ($soCitadas) { foreach ($k in $chaves) { if ($k.Length -ge 3 -and $alvo.Contains($k)) { $entra = $true; break } } }
+      if (-not $entra) { continue }
+      $nome = if ($c -match '(?m)^\*\*(.+?)\*\*') { $Matches[1].Trim() } else { $f.BaseName }
+      $ficha = LerFicha $nome $c $false
+      $ficha | Add-Member -NotePropertyName lado -NotePropertyValue $(if ($soCitadas) { 'inimigo' } else { 'aliado' }) -Force
+      $elenco[$nome] = $ficha
+    }
+  }
+  $elenco
+}
+
+# Acha quem e quem numa linha de intencao, sem exigir nome exato.
+function _achar($elenco, $pedaco) {
+  if (-not $pedaco) { return $null }
+  $p = SemAcento $pedaco
+  foreach ($n in $elenco.Keys) {
+    $sn = SemAcento $n
+    if ($p.Contains($sn) -or $sn.Contains($p)) { return $n }
+  }
+  foreach ($n in $elenco.Keys) {
+    foreach ($palavra in ((SemAcento $n) -split '\s+')) {
+      if ($palavra.Length -ge 4 -and $p.Contains($palavra)) { return $n }
+    }
+  }
+  $null
+}
+
+# Recebe as linhas de intencao do modelo e resolve tudo com as fichas.
+# Uma investida: rola, compara com a DEF, tira PV. Virou funcao porque agora
+# roda em dois lugares - nas intencoes do modelo e no turno automatico do aliado.
+function _bater($elenco, $estado, $qNome, $aNome, $arma, $log) {
+  $q = $elenco[$qNome]; $a = $elenco[$aNome]
+  $d = _dado
+  $tot = $d + $q.atq
+  $comArma = if ($arma) { " com " + ([string]$arma).Trim() } else { "" }
+  if ($tot -ge $a.def) {
+    $estado[$aNome].pv = [Math]::Max(0, $estado[$aNome].pv - $q.dano)
+    [void]$log.Add("[$qNome ataca $aNome$comArma : $d + $($q.atq) = $tot vs DEF $($a.def) -> ACERTA]")
+    [void]$log.Add("   dano $($q.dano)  ->  $aNome`: $($estado[$aNome].pv)/$($estado[$aNome].max) PV" +
+                   $(if ($estado[$aNome].pv -le 0) { "  CAIU" } else { "" }))
+  } else {
+    [void]$log.Add("[$qNome ataca $aNome$comArma : $d + $($q.atq) = $tot vs DEF $($a.def) -> ERRA]")
+  }
+}
+
+# O jogador so faz o que o jogador escreveu. O juiz e um modelo: ele inventa
+# acao pro personagem do jogador (o 12B sacou uma espada e atacou quando a
+# jogada tinha sido so \"um lestrigao vem pra cima de mim\"). Entao qualquer
+# linha de ataque com o jogador como autor passa por esta conferencia contra o
+# texto que ELE escreveu - e nao passa se ele nao declarou ataque.
+# Palavra que tambem e substantivo fica de fora: 'mato' (sai do mato), 'furo',
+# 'acerto'. Verbo ambiguo aqui abre a guarda justamente na jogada mais comum.
+$RX_ATAQUE_JOGADOR = '(?i)\b(ataco|atacamos|golpeio|estoco|apunhalo|esfaqueio|disparo|atiro|flecho|revido|investo|derrubo|degolo|esmago)\b|\b(parto|avanco|corro)\s+(pra|para)\s+cima\b|\bdou\s+(um\s+)?(soco|chute|golpe)\b'
+$RX_NAO_ATACO     = '(?i)\b(sem revidar|sem atacar|nao revido|nao ataco|nao vou atacar|so me defendo|apenas me defendo|me defendo|nao levanto a arma)\b'
+
+function JogadorDeclarouAtaque([string]$entrada) {
+  if (-not $entrada) { return $false }
+  $e = SemAcento $entrada
+  if ($e -match (SemAcento $RX_NAO_ATACO)) { return $false }
+  [bool]($e -match (SemAcento $RX_ATAQUE_JOGADOR))
+}
+
+function ResolverCombate([string]$intencoes, [string]$dados, [string]$contexto, [string]$entradaJogador) {
+  $elenco = ElencoDaCena $contexto
+  if ($elenco.Count -lt 2) { return "" }
+
+  # estado de PV atravessa as rodadas
+  if (-not $script:Combate) { $script:Combate = @{} }
+  foreach ($n in $elenco.Keys) {
+    if (-not $script:Combate.ContainsKey($n)) { $script:Combate[$n] = @{ pv = $elenco[$n].pv; max = $elenco[$n].pv } }
+  }
+
+  $fila = @(($dados -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ })
+  $iDado = 0
+  function _dado {
+    if ($script:_i -lt $script:_fila.Count) { $v = $script:_fila[$script:_i]; $script:_i++; return $v }
+    (New-Object Random).Next(1, 21)
+  }
+  $script:_fila = $fila; $script:_i = 0
+
+  $log = New-Object Collections.ArrayList
+  $agiram = New-Object Collections.ArrayList
+  foreach ($l in ($intencoes -split "`r?`n")) {
+    $s = $l.Trim()
+    if (-not $s) { continue }
+    # aliado com vontade propria pode nao atacar. Essas linhas passam direto
+    # pro narrador, sem conta nenhuma - nao ha o que resolver em hesitar.
+    if ($s -match '(?i)^(.{2,40}?)\s+(hesita|recusa|se recusa|protege|defende|foge|congela|chora|grita com|implora|argumenta|desobedece)\b(.*)$') {
+      $quem = _achar $elenco $Matches[1]
+      if ($quem) { [void]$log.Add($quem + " " + $Matches[2] + $Matches[3]); continue }
+    }
+    if ($s -notmatch '(?i)^(.{2,40}?)\s+(?:ataca|golpeia|acerta|investe contra|parte pra cima d[eoa])\s+(.{2,40}?)(?:\s+com\s+(.+))?$') { continue }
+    $qNome = _achar $elenco $Matches[1]
+    $aNome = _achar $elenco $Matches[2]
+    $arma  = $Matches[3]
+    if (-not $qNome -or -not $aNome -or $qNome -eq $aNome) { continue }
+    # o juiz nao pode fazer o personagem do jogador atacar por conta propria
+    if ($elenco[$qNome].lado -eq 'jogador' -and -not (JogadorDeclarouAtaque $entradaJogador)) {
+      Write-Host ("   recusei: o juiz fez " + $qNome + " atacar sem o jogador mandar") -ForegroundColor DarkYellow
+      continue
+    }
+    if ($script:Combate[$aNome].pv -le 0) { [void]$log.Add("$aNome ja esta caido - $qNome muda de alvo ou espera"); continue }
+
+    _bater $elenco $script:Combate $qNome $aNome $arma $log
+    [void]$agiram.Add($qNome)
+  }
+
+  # O TURNO DO ALIADO E GARANTIDO AQUI, nao pedido ao modelo.
+  #
+  # Pelo Guia do Mestre o aliado recorrente tem iniciativa propria e age no
+  # turno dele. Isso e regra, nao escolha narrativa - entao nao pode depender
+  # de o modelo lembrar. Em toda rodada testada ele descrevia a Alysa falando e
+  # nunca atacando; agora, se o juiz nao deu acao pra ela e existe inimigo de
+  # pe, o servidor da: ela bate no inimigo mais machucado, que e o que um
+  # coadjuvante faz.
+  $inimigosDePe = @($elenco.Keys | Where-Object { $elenco[$_].lado -eq 'inimigo' -and $script:Combate[$_].pv -gt 0 })
+  if ($inimigosDePe.Count -gt 0) {
+    # o @() e obrigatorio: com UM inimigo so, o pipe devolve uma string, e [0]
+    # numa string devolve o primeiro CARACTERE - o alvo virava 'L' e sumia.
+    $alvo = @($inimigosDePe | Sort-Object { $script:Combate[$_].pv })[0]
+    foreach ($n in @($elenco.Keys | Where-Object { $elenco[$_].lado -eq 'aliado' } | Sort-Object)) {
+      if ($agiram.Contains($n)) { continue }
+      if ($script:Combate[$n].pv -le 0) { continue }
+      _bater $elenco $script:Combate $n $alvo $null $log
+    }
+  }
+
+  if ($log.Count -eq 0) { return "" }
+
+  $vivos = @($script:Combate.Keys | Where-Object { $script:Combate[$_].pv -gt 0 } | Sort-Object)
+  $caidos = @($script:Combate.Keys | Where-Object { $script:Combate[$_].pv -le 0 } | Sort-Object)
+  $t = ($log -join "`n") + "`n`nDE PE: " + ($vivos -join ", ")
+  if ($caidos.Count) { $t += "`nCAIDOS: " + ($caidos -join ", ") }
+  $t
+}
+
+# ------------------------------------------------------------ o aliado que luta
+#
+# Regra do Guia do Mestre. Um aliado recorrente NAO se monta no Kleos de um
+# heroi: medido, ele sobrevive a 6% dos combates no nivel 9 e a mesa para de se
+# importar com ele. Ele usa a linha inteira da Tabua no KLEOS DO GRUPO MENOS 2 -
+# PV, DEF, ataque e dano - e nao entra no orcamento do encontro, porque ja esta
+# contado como um dos personagens em campo.
+
+function ForjarAliado($nome, $kleosGrupo, $arquetipo, $fortes, $chaves, $eventual) {
+  $kg = [int]$kleosGrupo
+  if ($kg -lt 3) { $kg = 3 }
+  # O livro separa os dois: o recorrente ja esta contado no Kleos do Grupo e usa
+  # a linha grupo-2; o eventual (o deus que aparece numa cena e vai embora) monta
+  # no proprio Kleos e SOMA no orcamento do encontro.
+  $k = $(if ($eventual) { [Math]::Max(1, [int]$kleosGrupo) } else { [Math]::Max(1, $kg - 2) })
+  $c = ForjarCriatura $nome $k $arquetipo $fortes $chaves
+  $t = $c.texto.TrimEnd() + "`n" + @"
+Quer: (o que ele persegue, mesmo contra o grupo)
+Lacos: (quem ele ama, deve favor ou teme)
+Voz: (idade, de onde veio, como trata os outros)
+Fala assim: NOME- (uma frase inteira na boca dele, com os erros e as girias dele)
+tipo: $(if ($eventual) { "aliado eventual (kleos proprio $k) - so aparece quando a cena pede" } else { "aliado recorrente (kleos do grupo $kg, linha $k = grupo menos 2)" })
+turno: tem iniciativa propria e age no proprio turno, como coadjuvante
+orcamento: $(if ($eventual) { "SOMA $k no encontro" } else { "NAO soma no encontro - ja esta contado como um personagem em campo" })
+sobe junto: $(if ($eventual) { "nao - some quando a cena acabar" } else { "quando o Kleos do Grupo subir, refaca esta ficha na linha nova" })
+"@
+  [pscustomobject]@{
+    nome = $c.nome
+    texto = $t
+    resumo = $c.resumo + $(if ($eventual) { " [aliado eventual, kleos $k]" } else { " [aliado, grupo $kg]" })
+  }
+}
+
+# Aliado recorrente esta em toda cena: entra sempre, nao por palavra-chave.
+# O eventual so entra quando a cena o cita - senao um deus de passagem ficaria
+# de plantao pra sempre, e ainda somando orcamento.
+function AliadosDaMesa($orcamento, $texto) {
+  if (-not (Test-Path -LiteralPath $DirAliados)) { return "" }
+  $out = New-Object Collections.ArrayList
+  $usado = 0
+  $alvo = SemAcento ([string]$texto)
+  foreach ($f in (Get-ChildItem -LiteralPath $DirAliados -Filter *.md -File | Sort-Object Name)) {
+    if ($f.BaseName -like "LEIA-ME*") { continue }
+    $c = Ler $f.FullName
+    $chaves = @(SemAcento $f.BaseName)
+    if ($c -match '(?s)^---\s*\r?\n(.*?)\r?\n---\s*\r?\n') {
+      if ($Matches[1] -match 'chaves\s*:\s*(.+)') {
+        $chaves = @(($Matches[1] -split ',') | ForEach-Object { SemAcento $_.Trim() } | Where-Object { $_ })
+      }
+      $c = $c.Substring($Matches[0].Length)
+    }
+    $b = $c.Trim()
+    if ($b -match '(?im)^tipo\s*:.*eventual') {
+      $citado = $false
+      foreach ($k in $chaves) { if ($k.Length -ge 3 -and $alvo.Contains($k)) { $citado = $true; break } }
+      if (-not $citado) { continue }
+    }
+    if ($usado + $b.Length -le $orcamento) { [void]$out.Add($b); $usado += $b.Length }
+  }
+  if ($out.Count -eq 0) { return "" }
+  ($out -join "`n`n")
+}
+
+# ---------------------------------------------------------------- criaturas
+
+# Ficha de inimigo. Sem isso o Mestre rola "vs. o bonus de ataque deles" e
+# inventa o alvo depois de ver o dado - que e o mesmo que nao rolar.
+function CriaturasRelevantes($texto, $orcamento) {
+  if (-not (Test-Path -LiteralPath $DirCriaturas)) { return "" }
+  $alvo = SemAcento $texto
+  $out = New-Object Collections.ArrayList
+  $usado = 0
+  foreach ($f in (Get-ChildItem -LiteralPath $DirCriaturas -Filter *.md -File)) {
+    $c = Ler $f.FullName
+    $chaves = @(SemAcento $f.BaseName)
+    $corpo = $c
+    if ($c -match '(?s)^---\s*\r?\n(.*?)\r?\n---\s*\r?\n') {
+      $corpo = $c.Substring($Matches[0].Length)
+      if ($Matches[1] -match 'chaves\s*:\s*(.+)') {
+        $chaves = @(($Matches[1] -split ',') | ForEach-Object { SemAcento $_.Trim() } | Where-Object { $_ })
+      }
+    }
+    foreach ($k in $chaves) {
+      if ($k.Length -ge 3 -and $alvo.Contains($k)) {
+        $b = $corpo.Trim()
+        if ($usado + $b.Length -le $orcamento) { [void]$out.Add($b); $usado += $b.Length }
+        break
+      }
+    }
+  }
+  if ($out.Count -eq 0) { return "" }
+  ($out -join "`n`n")
+}
+
+# Decide se a rodada tem mecanica. Cuidado: a lista antiga so tinha verbo de
+# acao DO JOGADOR, entao \"um lestrigao sai do mato e vem pra cima de mim\" nao
+# ligava o motor - e sem rodada nenhum aliado tem turno pra agir sozinho.
+function CenaTemRisco($texto) {
+  $t = SemAcento $texto
+  if ($t -match 'atac|ataqu|lanca|espada|adaga|escudo|golpe|briga|luta|combat|cerca|agarr|derrub|empurr|esquiv|furtiv|escond|arromb|escal|salt|convenc|intimid|persuad|resist|veneno|armadilh|queda|fug') { return $true }
+  # o jogador sendo alvo, que e o caso que faltava
+  if ($t -match 'vem pra cima|parte pra cima|vem na minha|investe|avanc|arremet|se joga em|pula em|bote|rosna|urra|rug|mord|garra|presa|ameac|encurral|emboscad|surge d|sai do mato|me pega|me acerta|me derruba|sangr|ferid') { return $true }
+  # criatura com ficha presente e risco por definicao: ela age no turno dela,
+  # mesmo que o jogador nao tenha encostado nela.
+  if (Test-Path -LiteralPath $DirCriaturas) {
+    foreach ($f in (Get-ChildItem -LiteralPath $DirCriaturas -Filter *.md -File -EA SilentlyContinue)) {
+      if ($f.BaseName -like 'LEIA-ME*') { continue }
+      $chaves = @(SemAcento $f.BaseName)
+      $c = Ler $f.FullName
+      if ($c -match '(?s)^---\s*\r?\n(.*?)\r?\n---\s*\r?\n' -and $Matches[1] -match 'chaves\s*:\s*(.+)') {
+        $chaves = @(($Matches[1] -split ',') | ForEach-Object { SemAcento $_.Trim() } | Where-Object { $_ })
+      }
+      foreach ($k in $chaves) { if ($k.Length -ge 4 -and $t.Contains($k)) { return $true } }
+    }
+  }
+  $false
+}
+
+$CALCULADOR = @'
+Voce e o juiz de regras da mesa. Voce NAO narra, NAO rola dado e NAO calcula
+nada. Os dados e as contas sao meus.
+
+Sua unica tarefa: dizer QUEM faz O QUE contra QUEM, em ordem de turno.
+
+Uma linha por acao, exatamente nesta forma e nada mais:
+
+  Nome ataca Nome com arma
+
+Ordem: primeiro o que o JOGADOR disse que faz. Depois os aliados dele. Depois
+os inimigos, um por vez.
+
+REGRAS DURAS
+
+- O JOGADOR DECIDE SOZINHO. Escreva so a acao que ele escreveu. Nao invente
+  segunda acao pra ele, nao faca ele recuar, gritar, hesitar nem trocar de alvo.
+- Use os nomes exatos que aparecem nas fichas que eu te mandei.
+- Nao escreva numero nenhum: nem dado, nem dano, nem PV, nem DEF.
+- Nao escreva narracao, nem introducao, nem conclusao. So as linhas.
+- Quem ja caiu nao age.
+
+CRIATURA SEM FICHA: antes das linhas de acao, monte a ficha. Voce decide so
+duas coisas e eu calculo o resto pela Tabua de Kleos do sistema:
+
+  FICHA NOVA: Nome | kleos: N | arquetipo: X | fortes: Defesa, Defesa | chaves: palavras
+
+  kleos     = degrau de 1 a 11. Capanga de bando fica 3 ou 4 degraus abaixo do
+              grupo. Inimigo central da sessao fica no degrau do grupo.
+  arquetipo = Bruto, Veloz, Blindado, Enxame, Conjurador, Sombra ou Colosso.
+  fortes    = as DUAS defesas passivas fortes (Fortitude, Reflexos, Vontade).
+  chaves    = palavras que o jogador diria pra citar ela.
+
+  Nao escreva PV, DEF, ataque nem dano: os numeros da Tabua sao meus.
+
+- ALIADO QUE LUTA: aliado age no turno dele, como coadjuvante. Ele entra nas
+  linhas tambem, com o nome da ficha dele.
+'@
+
+
+# Primeira das tres chamadas: resolve a mecanica ANTES de narrar.
+# O narrador entao so descreve o que ja aconteceu, em vez de inventar numero
+# no meio da prosa - que era o motivo de toda rolagem dar sucesso.
+function CalcularCena([string]$entrada, [string]$dados) {
+  $recente = (($Historico | Select-Object -Last 4 | ForEach-Object { $_.texto }) -join " ")
+  $busca = $recente + " " + $entrada
+
+  $ficha = Ler (Join-Path $Campanha "02-personagem.md")
+  $campos = @([Regex]::Matches($ficha, '(?m)^-\s*([^:\r\n]{1,30})\s*:\s*(.*)$') |
+              ForEach-Object { "- " + $_.Groups[1].Value.Trim() + ": " + $_.Groups[2].Value.Trim() }) -join "`n"
+  $bichos = CriaturasRelevantes $busca 1200
+  $regras = RegrasRelevantes ($busca + " iniciativa combate ataque dano turno defesa condicoes") 1400
+
+  $p = "FICHA DO PERSONAGEM`n$campos`n`n"
+  $amigos = AliadosDaMesa 900 $busca
+  if ($amigos) { $p += "ALIADOS QUE LUTAM COM O JOGADOR`n$amigos`n`n" }
+  if ($bichos) { $p += "FICHA DAS CRIATURAS PRESENTES`n$bichos`n`n" }
+  else { $p += "FICHA DAS CRIATURAS PRESENTES`n(nenhuma registrada ainda - monte a ficha das que aparecerem, com FICHA NOVA)`n`n" }
+  if ($regras) { $p += "REGRAS QUE VALEM`n$regras`n`n" }
+  $p += "DADOS JA ROLADOS, NESTA ORDEM`n$dados`n`n"
+  if ($recente) { $p += "O QUE VINHA ACONTECENDO`n" + $recente.Substring([Math]::Max(0, $recente.Length - 700)) + "`n`n" }
+  $p += "O JOGADOR QUER`n$entrada`n`nResolva."
+
+  $payload = ConvertTo-Json @{
+    model = $Cfg.modelo
+    messages = @(@{ role = "system"; content = $CALCULADOR }, @{ role = "user"; content = $p })
+    stream = $false
+    options = @{ temperature = 0.15; num_ctx = [int]$Cfg.contexto; num_predict = 350 }
+    keep_alive = "30m"
+  } -Depth 8
+
+  try {
+    $r = [Net.HttpWebRequest]::Create("$Ollama/api/chat")
+    $r.Method = "POST"; $r.ContentType = "application/json"
+    $r.Timeout = 300000; $r.ReadWriteTimeout = 300000
+    $pb = $UTF8.GetBytes($payload); $r.ContentLength = $pb.Length
+    $os = $r.GetRequestStream(); $os.Write($pb, 0, $pb.Length); $os.Close()
+    $resp = (New-Object IO.StreamReader($r.GetResponse().GetResponseStream(), [Text.Encoding]::UTF8)).ReadToEnd() | ConvertFrom-Json
+    $intencoes = ([string]$resp.message.content).Trim()
+
+    # ficha nova primeiro: a criatura precisa existir antes de apanhar
+    $novas = GravarFichasNovas $intencoes
+    foreach ($nf in $novas) { Write-Host ("   ficha nova: " + $nf) -ForegroundColor DarkCyan }
+
+    # a conta e aqui, com as fichas de verdade e os dados que eu sorteei
+    $resolvido = ResolverCombate $intencoes $dados $busca $entrada
+    if ($resolvido) { return $resolvido }
+    $intencoes
+  } catch {
+    Write-Host ("   calculadora falhou: " + $_.Exception.Message) -ForegroundColor DarkYellow
+    ""
+  }
+}
+
+
+# O juiz monta ficha de criatura que ainda nao existe. Aqui ela vira arquivo,
+# pra valer pro resto da campanha em vez de ser reinventada toda briga com
+# numeros diferentes.
+function GravarFichasNovas([string]$mecanica) {
+  $feitas = @()
+  if (-not $mecanica) { return $feitas }
+  # O juiz devolve so o julgamento: nome, Kleos, arquetipo e as defesas fortes.
+  # Os numeros saem da Tabua, aqui, com aritmetica de verdade.
+  foreach ($m in [Regex]::Matches($mecanica, '(?im)^\s*FICHA\s+NOVA\s*:\s*(.+?)\s*$')) {
+    $cab = $m.Groups[1].Value
+    $nome = $cab; $kleos = 2; $arq = ""; $fortes = ""; $chaves = ""
+    foreach ($p in ($cab -split '\|')) {
+      $p = $p.Trim()
+      if ($p -match '(?i)^kleos\s*[:=]\s*(\d+)')      { $kleos  = [int]$Matches[1]; continue }
+      if ($p -match '(?i)^arquetipo\s*[:=]\s*(.+)$')  { $arq    = $Matches[1].Trim(); continue }
+      if ($p -match '(?i)^fortes?\s*[:=]\s*(.+)$')    { $fortes = $Matches[1].Trim(); continue }
+      if ($p -match '(?i)^chaves\s*[:=]\s*(.+)$')     { $chaves = $Matches[1].Trim(); continue }
+      if ($p -notmatch '[:=]') { $nome = $p }
+    }
+    if (-not $nome) { continue }
+    $arqv = Join-Path $DirCriaturas ((Slug $nome) + ".md")
+    if (Test-Path -LiteralPath $arqv) { continue }
+    $c = ForjarCriatura $nome $kleos $arq $fortes $chaves
+    Gravar $arqv $c.texto
+    $feitas += $c.resumo
+  }
+  $feitas
 }
 
 # ------------------------------------------------------------- HTTP helpers
@@ -1062,7 +1922,36 @@ while ($listener.IsListening) {
       $sw.AutoFlush = $true
 
       try {
-        $msgs = MontarMensagens $entrada $diretor
+        # 1 de 3: o juiz resolve os numeros antes de qualquer narracao
+        $rng = New-Object Random
+        $sorteados = @(1..8 | ForEach-Object { $rng.Next(1, 21) })
+        # se o jogador rolou o proprio dado e informou ("ataco com as correntes / 20"),
+        # esse valor vale primeiro. O dado da mesa e dele, nao meu.
+        # numero sozinho numa linha, ou marcado com "rolei/tirei/d20".
+        # Numero no meio de frase nao conta: "3 capangas" e "20 metros" nao sao dado.
+        $meu = [Regex]::Match($entrada, '(?im)(?:^[ \t]*(\d{1,2})[ \t]*$|\b(?:rolei|tirei|deu|saiu|dado|d20)[ \t]*:?[ \t]*(\d{1,2})\b)')
+        if ($meu.Success) {
+          $v = [int]$(if ($meu.Groups[1].Success) { $meu.Groups[1].Value } else { $meu.Groups[2].Value })
+          if ($v -ge 1 -and $v -le 20) {
+            $sorteados = @($v) + $sorteados
+            Write-Host ("   dado do jogador: " + $v) -ForegroundColor DarkCyan
+          }
+        }
+        $script:DadosDaVez = ($sorteados -join ", ")
+        $mecanica = ""
+        # ATENCAO ao parenteses: sem o par externo o PowerShell chama a funcao so com
+        # o historico e concatena $entrada no RESULTADO - a acao do jogador nunca
+        # chegava, e na primeira jogada a calculadora nem rodava.
+        $textoDaCena = (($Historico | Select-Object -Last 4 | ForEach-Object { $_.texto }) -join " ") + " " + $entrada
+        if (-not $diretor -and (CenaTemRisco $textoDaCena)) {
+          $sw.Write("event: calculando`ndata: {}`n`n")
+          # CalcularCena ja grava a ficha nova e ja resolve os numeros
+          $mecanica = CalcularCena $entrada $script:DadosDaVez
+          if ($mecanica) { Write-Host ("   mecanica: " + ($mecanica -replace "`r?`n", " | ").Substring(0, [Math]::Min(110, $mecanica.Length))) -ForegroundColor DarkGray }
+        }
+
+        # 2 de 3: narrar
+        $msgs = MontarMensagens $entrada $diretor $mecanica
         $opts = @{
           temperature = [double]$Cfg.temperatura
           num_ctx     = [int]$Cfg.contexto
