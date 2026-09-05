@@ -4,7 +4,12 @@
 
 ## Onde
 
-Dentro da pasta da campanha, que fica em `Documentos/Braseiro/<sua campanha>/`.
+**O jeito curto: arraste os arquivos pra cima da janela do Braseiro.** Ele guarda
+na campanha aberta, converte o PDF na hora, indexa e te responde no chat dizendo
+o que entrou e o que não deu. O botão **📚 adicionar livros do sistema** no painel
+faz o mesmo escolhendo pelo Explorador.
+
+Na mão, é dentro da pasta da campanha, em `Documentos/Braseiro/<sua campanha>/`.
 Pode ter quantas subpastas você quiser:
 
 ```

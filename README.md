@@ -247,7 +247,14 @@ Salvou, vale na jogada seguinte.
 
 ## Os livros do sistema
 
-Ponha `.pdf`, `.md` ou `.txt` na pasta `livros/` da sua campanha, com subpastas à vontade:
+**Arraste os arquivos pra cima da janela do Braseiro.** É isso. Ele guarda na
+campanha aberta, converte o PDF na hora e já indexa — sem reiniciar, sem procurar
+pasta. Tem também o botão **📚 adicionar livros do sistema** no painel, se você
+preferir escolher pelo Explorador.
+
+Ele responde no chat dizendo quantos entraram e quais não deram, com o motivo.
+
+Se preferir na mão, a pasta é `livros/` dentro da campanha, com subpastas à vontade:
 
 ```
 Documentos/Braseiro/minha-campanha/livros/

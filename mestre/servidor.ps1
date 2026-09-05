@@ -650,6 +650,46 @@ while ($listener.IsListening) {
       } -Depth 4)
     }
 
+    elseif ($rota -eq "/api/livros/soltar") {
+      # recebe um arquivo arrastado pra janela e guarda em livros/ da campanha.
+      # o corpo e o arquivo cru; o nome vem na query pra nao ter que fazer multipart.
+      $nome = [string]$req.QueryString["nome"]
+      $nome = Split-Path $nome -Leaf                     # nunca aceita caminho
+      $nome = [Regex]::Replace($nome, '[<>:"/\\|?*\x00-\x1F]', '-')
+      $ext  = [IO.Path]::GetExtension($nome).ToLowerInvariant()
+
+      if ($nome -match '^\s*$' -or $nome -match '\.\.') {
+        Responder $resp 400 "application/json; charset=utf-8" (ConvertTo-Json @{ ok = $false; nome = $nome; erro = "nome invalido" })
+      }
+      elseif ($ext -notin @(".pdf", ".md", ".markdown", ".txt")) {
+        Responder $resp 400 "application/json; charset=utf-8" (ConvertTo-Json @{ ok = $false; nome = $nome; erro = "so aceito .pdf, .md ou .txt" })
+      }
+      else {
+        if (-not (Test-Path -LiteralPath $DirLivros)) { New-Item -ItemType Directory -Path $DirLivros -Force | Out-Null }
+        $destino = Join-Path $DirLivros $nome
+        # grava direto em disco, sem passar pela memoria: livro grande nao derruba
+        $fs = [IO.File]::Create($destino)
+        try { $req.InputStream.CopyTo($fs) } finally { $fs.Close() }
+        $tam = (Get-Item -LiteralPath $destino).Length
+
+        $r = @{ ok = $true; nome = $nome; bytes = $tam; convertido = $true; motivo = "" }
+        if ($ext -eq ".pdf") {
+          try { $x = ExtrairTextoPdf $destino } catch { $x = $null }
+          if ($null -ne $x -and $x.texto) {
+            Gravar ($destino + ".txt") ("<!-- gerado do PDF " + $nome + ". Pode editar a vontade: so e refeito se o PDF mudar. -->`n`n" + $x.texto)
+            $av = $destino + ".aviso"
+            if (Test-Path -LiteralPath $av) { Remove-Item -LiteralPath $av -Force }
+          } else {
+            $r.convertido = $false
+            $r.motivo = if ($x) { $x.motivo } else { "erro ao ler o arquivo" }
+            Gravar ($destino + ".aviso") $r.motivo
+          }
+        }
+        $script:LivrosSelo = $null      # forca reindexar na proxima leitura
+        Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json $r -Depth 4)
+      }
+    }
+
     elseif ($rota -eq "/api/abrir-pasta") {
       Start-Process explorer.exe $Campanha | Out-Null
       Responder $resp 200 "application/json" '{"ok":true}'
