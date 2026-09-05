@@ -422,7 +422,14 @@ async function jogar(){
           acc += carga.t;
           alvo.innerHTML = enfeita(acc);
           if (colado) noFim();
+        } else if (ev[1] === "anotando"){
+          alvo.classList.remove("cursor");
+          const n = document.createElement("div");
+          n.className = "gravou"; n.id = "anotando";
+          n.textContent = "anotando na campanha…";
+          fio.appendChild(n); if (perto()) noFim();
         } else if (ev[1] === "fim"){
+          document.getElementById("anotando")?.remove();
           alvo.classList.remove("cursor");
           const est = await carregar(carga.mudou);
           if (carga.mudou && carga.mudou.length){
