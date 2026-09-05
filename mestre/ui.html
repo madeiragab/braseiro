@@ -119,7 +119,7 @@
     <textarea id="campo" rows="1" placeholder="O que você faz?"></textarea>
     <div class="dica">
       <span><kbd>Enter</kbd> joga</span>
-      <span><kbd>//</kbd> no início fala com o Mestre fora da ficção</span>
+      <span><kbd>mestre:</kbd> fala com o Mestre fora da ficção</span>
       <span class="sep"></span>
       <button id="btnLimpar">apagar conversa</button>
     </div>
@@ -220,8 +220,11 @@ campo.addEventListener("keydown", e => {
 async function jogar(){
   const bruto = campo.value.trim();
   if (!bruto || ocupado) return;
-  const diretor = bruto.startsWith("//");
-  const texto = diretor ? bruto.slice(2).trim() : bruto;
+  // "mestre:" no início fala com o Mestre por fora da ficção.
+  // "//" segue valendo como atalho curto.
+  const PREFIXO = /^\s*(mestre\s*:|\/\/)\s*/i;
+  const diretor = PREFIXO.test(bruto);
+  const texto = diretor ? bruto.replace(PREFIXO, "").trim() : bruto;
   if (!texto) return;
 
   campo.value = ""; campo.style.height = "auto";
