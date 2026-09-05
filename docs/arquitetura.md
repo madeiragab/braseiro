@@ -9,7 +9,7 @@ flowchart LR
     N["🌐 navegador<br/>ui.html"]
     S["⚙️ servidor.ps1<br/>PowerShell 5.1<br/>localhost:11500"]
     O["🧠 ollama.exe serve<br/>127.0.0.1:11434"]
-    D["📁 campanha/"]
+    D["📁 Documentos/Braseiro/<campanha>/"]
 
     N <-->|"fetch + SSE"| S
     S <-->|"HTTP / NDJSON"| O
@@ -119,7 +119,7 @@ Mais elaborado, porque um manual é grande.
 
 ```mermaid
 flowchart TD
-    A["campanha/livros/**.md"] --> B["corta nos títulos # ## ###"]
+    A["livros/**"] --> B["corta nos títulos # ## ###"]
     B --> C{"seção > 1200 chars?"}
     C -->|sim| D["fatia em pedaços,<br/>cortando em fim de linha"]
     C -->|não| E["uma entrada"]

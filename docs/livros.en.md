@@ -4,10 +4,11 @@
 
 ## Where
 
-`campanha/livros/`, with as many subfolders as you want:
+Inside the campaign folder, which lives in `Documents/Braseiro/<your campaign>/`.
+As many subfolders as you want:
 
 ```
-campanha/livros/
+Documents/Braseiro/minha-campanha/livros/
 ├── dnd5e/
 │   ├── combat.md
 │   ├── spells.md
@@ -166,6 +167,6 @@ index rebuilds itself when it notices a file's modification date changed.
 
 ## About copyright
 
-What you put in `campanha/livros/` stays on your drive, is read only by your own
-machine, and goes nowhere. This repository distributes no rulebook — the example
+What you put in your campaign's `livros/` folder stays on your computer, is read
+only by your own machine, and goes nowhere. This repository distributes no rulebook — the example
 in `livros/exemplo-d20/` is original text written to demonstrate the format.

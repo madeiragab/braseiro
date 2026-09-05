@@ -99,6 +99,27 @@
     padding:5px 10px;cursor:pointer;font-size:12px;
   }
   #puxador:hover{color:var(--brasa)}
+
+  /* ---------------- seletor de campanha ---------------- */
+  #mesas{
+    display:flex;align-items:center;gap:6px;
+    padding:10px 12px;border-bottom:1px solid var(--linha);
+  }
+  #mesas select{
+    flex:1;min-width:0;background:#14110f;border:1px solid var(--linha);
+    border-radius:5px;padding:5px 7px;font-size:12.5px;outline:none;
+  }
+  #mesas select:focus{border-color:var(--brasa)}
+  #mesas button{
+    background:none;border:1px solid var(--linha);color:var(--fraco);
+    border-radius:5px;padding:5px 8px;cursor:pointer;font-size:12.5px;line-height:1;
+  }
+  #mesas button:hover{color:var(--brasa);border-color:var(--brasa)}
+  #ondeSalva{
+    padding:0 12px 9px;font-size:11px;color:#6f6257;
+    word-break:break-all;border-bottom:1px solid var(--linha);
+  }
+
   ::-webkit-scrollbar{width:9px}
   ::-webkit-scrollbar-thumb{background:#332c26;border-radius:5px}
 </style>
@@ -128,6 +149,12 @@
 
 <button id="puxador">campanha</button>
 <div id="lado">
+  <div id="mesas">
+    <select id="selMesa" title="campanha aberta"></select>
+    <button id="btnNova" title="começar outra campanha">+ nova</button>
+    <button id="btnPasta" title="abrir a pasta no Explorador">📁</button>
+  </div>
+  <div id="ondeSalva"></div>
   <div id="abas"></div>
   <textarea id="editor" spellcheck="false"></textarea>
   <div id="rodape">
@@ -160,9 +187,22 @@ function bolha(classe, texto){
 }
 
 /* ---------- lateral ---------- */
+function pintarMesas(r){
+  const s = $("#selMesa");
+  s.innerHTML = "";
+  for (const c of (r.campanhas || [])){
+    const o = document.createElement("option");
+    o.value = c; o.textContent = c;
+    if (c === r.campanha) o.selected = true;
+    s.appendChild(o);
+  }
+  $("#ondeSalva").textContent = r.pasta || "";
+}
+
 async function carregar(destacar){
   const r = await fetch("/api/estado").then(r => r.json());
   arquivos = r.arquivos;
+  pintarMesas(r);
   const abas = $("#abas");
   abas.innerHTML = "";
   for (const a of arquivos){
@@ -207,6 +247,28 @@ $("#btnSalvar").onclick = async () => {
   const guarda = atual; await carregar(); atual = guarda;
 };
 $("#puxador").onclick = () => $("#lado").classList.toggle("fechado");
+
+/* ---------- campanhas ---------- */
+async function trocarMesa(nome){
+  if (ocupado){ alert("Espera o Mestre terminar de escrever."); return; }
+  const r = await fetch("/api/campanha", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({nome})}).then(r => r.json());
+  atual = null;
+  fio.innerHTML = "";
+  const est = await carregar();
+  if (est.historico && est.historico.length){
+    for (const h of est.historico) bolha(h.papel === "user" ? "eu" : "mestre", h.texto);
+  } else {
+    bolha("mestre", "*Campanha **" + r.campanha + "** aberta. O braseiro está aceso.*");
+  }
+  noFim(); campo.focus();
+}
+$("#selMesa").onchange = e => trocarMesa(e.target.value);
+$("#btnNova").onclick = () => {
+  const n = prompt("Nome da nova campanha:\n(vira uma pasta em Documentos\\Braseiro)");
+  if (n && n.trim()) trocarMesa(n.trim());
+};
+$("#btnPasta").onclick = () => fetch("/api/abrir-pasta", {method:"POST"});
 
 /* ---------- jogar ---------- */
 campo.addEventListener("input", () => {

@@ -10,7 +10,7 @@ models/*
 *.gguf
 
 # estado de sessao
-campanha/.historico.json
+modelo/.historico.json
 
 # atalho gerado por CRIAR-ATALHO.bat
 Braseiro.lnk
