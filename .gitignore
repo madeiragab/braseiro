@@ -1,0 +1,21 @@
+# o runtime do Ollama: 1,8 GB, baixado do release oficial
+bin/*
+!bin/.gitkeep
+
+# o acervo de modelos: gigabytes
+models/*
+!models/.gitkeep
+
+# modelos soltos
+*.gguf
+
+# estado de sessao
+campanha/.historico.json
+
+# atalho gerado por CRIAR-ATALHO.bat
+Braseiro.lnk
+
+# lixo do Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/

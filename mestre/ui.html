@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#14110f">
+<title>Braseiro</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='52' fill='%23231c18'/%3E%3Cpath d='M128 26C96 84 62 104 62 158c0 42 28 70 66 70s66-28 66-70c0-54-34-74-66-132z' fill='%23d9822f'/%3E%3Cpath d='M128 104c-16 30-32 42-32 72 0 26 14 40 32 40s32-14 32-40c0-30-16-42-32-72z' fill='%23fbc37a'/%3E%3C/svg%3E">
+<style>
+  :root{
+    color-scheme: dark;   /* scrollbar, seleção e controles nativos vêm escuros */
+    --bg:#14110f; --painel:#1c1815; --linha:#332c26; --texto:#e8ded2;
+    --fraco:#9a8b7c; --brasa:#c9762f; --verde:#7d9a5e; --erro:#c05a4a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);color:var(--texto);
+    font:15px/1.65 "Iowan Old Style",Georgia,"Times New Roman",serif;
+    display:flex;overflow:hidden;
+  }
+  button,input,textarea{font-family:inherit;color:inherit}
+
+  /* ---------------- mesa ---------------- */
+  #mesa{flex:1;display:flex;flex-direction:column;min-width:0}
+  #rolagem{flex:1;overflow-y:auto;padding:46px 8px 8px}
+
+  #marca{
+    position:fixed;top:12px;left:20px;z-index:4;pointer-events:none;
+    display:flex;align-items:center;gap:7px;
+    font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:#6f6257;
+  }
+  #marca svg{width:15px;height:15px;opacity:.85}
+  #fio{max-width:70ch;margin:0 auto;padding:0 20px 24px}
+
+  .msg{margin:0 0 26px;white-space:pre-wrap;word-wrap:break-word}
+  .msg.eu{
+    color:var(--brasa);border-left:2px solid var(--brasa);
+    padding-left:14px;font-style:italic;
+  }
+  .msg.eu.off{color:var(--fraco);border-color:var(--linha);font-style:normal;font-size:13.5px}
+  .msg.mestre b{color:#f0e4d4}
+  .msg.mestre i{color:var(--fraco)}
+  .rolagem-dado{
+    display:inline-block;background:#241d18;border:1px solid var(--linha);
+    border-radius:4px;padding:1px 8px;font-size:13px;color:var(--verde);
+    font-family:ui-monospace,Consolas,monospace;font-style:normal;
+  }
+  .erro{color:var(--erro);border-left:2px solid var(--erro);padding-left:14px;font-size:14px}
+  .gravou{
+    color:var(--fraco);font-size:12.5px;font-style:italic;
+    border-top:1px dashed var(--linha);padding-top:8px;margin-top:-14px;margin-bottom:26px;
+  }
+  .cursor::after{content:"▊";color:var(--brasa);animation:pisca 1s steps(2) infinite}
+  @keyframes pisca{50%{opacity:0}}
+
+  /* ---------------- entrada ---------------- */
+  #barra{border-top:1px solid var(--linha);background:var(--painel);padding:14px 20px 16px}
+  #barra .dentro{max-width:70ch;margin:0 auto}
+  #campo{
+    width:100%;background:#14110f;border:1px solid var(--linha);border-radius:8px;
+    padding:12px 14px;font-size:15px;resize:none;min-height:52px;max-height:180px;outline:none;
+  }
+  #campo:focus{border-color:var(--brasa)}
+  #campo::placeholder{color:#5f544b}
+  .dica{display:flex;gap:14px;align-items:center;margin-top:8px;font-size:12px;color:var(--fraco)}
+  .dica kbd{background:#2a231e;border:1px solid var(--linha);border-radius:3px;padding:1px 5px;font-size:11px;font-family:inherit}
+  .dica .sep{flex:1}
+  .dica button{background:none;border:none;color:var(--fraco);cursor:pointer;font-size:12px;padding:2px 4px}
+  .dica button:hover{color:var(--brasa)}
+
+  /* ---------------- lateral ---------------- */
+  #lado{
+    width:400px;flex-shrink:0;border-left:1px solid var(--linha);background:var(--painel);
+    display:flex;flex-direction:column;
+  }
+  #lado.fechado{display:none}
+  #abas{display:flex;flex-wrap:wrap;gap:2px;padding:10px 10px 0;border-bottom:1px solid var(--linha)}
+  #abas button{
+    background:none;border:none;border-bottom:2px solid transparent;color:var(--fraco);
+    cursor:pointer;padding:6px 9px;font-size:12.5px;border-radius:4px 4px 0 0;white-space:nowrap;
+  }
+  #abas button:hover{color:var(--texto)}
+  #abas button.on{color:var(--brasa);border-bottom-color:var(--brasa)}
+  #abas button.piscou{animation:destaca 1.4s ease-out}
+  @keyframes destaca{0%{background:rgba(201,118,47,.45)}100%{background:transparent}}
+  #editor{
+    flex:1;width:100%;background:#14110f;border:none;outline:none;resize:none;
+    padding:16px;font:13px/1.6 ui-monospace,Consolas,monospace;color:#cfc3b4;
+  }
+  #rodape{padding:10px 14px;border-top:1px solid var(--linha);display:flex;align-items:center;gap:10px;font-size:12px;color:var(--fraco)}
+  #rodape button{background:var(--brasa);border:none;color:#14110f;font-weight:600;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px}
+  #rodape button:disabled{background:var(--linha);color:var(--fraco);cursor:default}
+
+  #puxador{
+    position:fixed;top:10px;right:10px;z-index:5;background:var(--painel);
+    border:1px solid var(--linha);color:var(--fraco);border-radius:6px;
+    padding:5px 10px;cursor:pointer;font-size:12px;
+  }
+  #puxador:hover{color:var(--brasa)}
+  ::-webkit-scrollbar{width:9px}
+  ::-webkit-scrollbar-thumb{background:#332c26;border-radius:5px}
+</style>
+</head>
+<body>
+
+<div id="marca">
+  <svg viewBox="0 0 256 256" aria-hidden="true">
+    <path d="M128 26C96 84 62 104 62 158c0 42 28 70 66 70s66-28 66-70c0-54-34-74-66-132z" fill="#c9762f"/>
+    <path d="M128 104c-16 30-32 42-32 72 0 26 14 40 32 40s32-14 32-40c0-30-16-42-32-72z" fill="#f6aa4a"/>
+  </svg>
+  Braseiro
+</div>
+
+<div id="mesa">
+  <div id="rolagem"><div id="fio"></div></div>
+  <div id="barra"><div class="dentro">
+    <textarea id="campo" rows="1" placeholder="O que você faz?"></textarea>
+    <div class="dica">
+      <span><kbd>Enter</kbd> joga</span>
+      <span><kbd>//</kbd> no início fala com o Mestre fora da ficção</span>
+      <span class="sep"></span>
+      <button id="btnLimpar">apagar conversa</button>
+    </div>
+  </div></div>
+</div>
+
+<button id="puxador">campanha</button>
+<div id="lado">
+  <div id="abas"></div>
+  <textarea id="editor" spellcheck="false"></textarea>
+  <div id="rodape">
+    <button id="btnSalvar" disabled>salvar</button>
+    <span id="aviso">o Mestre lê estes arquivos a cada jogada</span>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fio = $("#fio"), rolagem = $("#rolagem"), campo = $("#campo");
+let arquivos = [], atual = null, ocupado = false;
+
+/* ---------- render ---------- */
+function noFim(){ rolagem.scrollTop = rolagem.scrollHeight; }
+function perto(){ return rolagem.scrollHeight - rolagem.scrollTop - rolagem.clientHeight < 120; }
+
+function enfeita(t){
+  return t
+    .replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))
+    .replace(/\[([^\[\]]*?\d[^\[\]]*?)\]/g, '<span class="rolagem-dado">$1</span>')
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<i>$2</i>");
+}
+function bolha(classe, texto){
+  const d = document.createElement("div");
+  d.className = "msg " + classe;
+  if (classe === "mestre") d.innerHTML = enfeita(texto); else d.textContent = texto;
+  fio.appendChild(d); noFim(); return d;
+}
+
+/* ---------- lateral ---------- */
+async function carregar(destacar){
+  const r = await fetch("/api/estado").then(r => r.json());
+  arquivos = r.arquivos;
+  const abas = $("#abas");
+  abas.innerHTML = "";
+  for (const a of arquivos){
+    const b = document.createElement("button");
+    b.textContent = a.nome.replace(/^\d+-/, "");
+    b.onclick = () => abrir(a.id);
+    b.dataset.id = a.id;
+    if (a.id === atual) b.className = "on";
+    if (destacar && destacar.some(m => m.includes(a.nome.replace(/^\d+-/, "").replace("lore/","")))) b.classList.add("piscou");
+    abas.appendChild(b);
+  }
+  if (!atual && arquivos.length) abrir(arquivos.find(a => a.id.includes("personagem"))?.id || arquivos[0].id);
+  else if (atual){
+    const a = arquivos.find(x => x.id === atual);
+    if (a && document.activeElement !== $("#editor")) $("#editor").value = a.texto;
+  }
+  return r;
+}
+const soLeitura = id => id && id.startsWith("__");
+
+function abrir(id){
+  atual = id;
+  const a = arquivos.find(x => x.id === id);
+  const ed = $("#editor");
+  ed.value = a ? a.texto : "";
+  ed.readOnly = soLeitura(id);
+  ed.style.opacity = soLeitura(id) ? .82 : 1;
+  $("#btnSalvar").disabled = true;
+  $("#btnSalvar").style.display = soLeitura(id) ? "none" : "";
+  $("#aviso").textContent = soLeitura(id)
+    ? "índice automático — os livros ficam em campanha\\livros\\"
+    : "o Mestre lê estes arquivos a cada jogada";
+  document.querySelectorAll("#abas button").forEach(b => b.classList.toggle("on", b.dataset.id === id));
+}
+$("#editor").oninput = () => { if (!soLeitura(atual)) $("#btnSalvar").disabled = false; };
+$("#btnSalvar").onclick = async () => {
+  await fetch("/api/salvar", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({id: atual, texto: $("#editor").value})});
+  $("#btnSalvar").disabled = true;
+  $("#aviso").textContent = "salvo — vale já na próxima jogada";
+  setTimeout(() => $("#aviso").textContent = "o Mestre lê estes arquivos a cada jogada", 2600);
+  const guarda = atual; await carregar(); atual = guarda;
+};
+$("#puxador").onclick = () => $("#lado").classList.toggle("fechado");
+
+/* ---------- jogar ---------- */
+campo.addEventListener("input", () => {
+  campo.style.height = "auto";
+  campo.style.height = Math.min(campo.scrollHeight, 180) + "px";
+});
+campo.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); jogar(); }
+});
+
+async function jogar(){
+  const bruto = campo.value.trim();
+  if (!bruto || ocupado) return;
+  const diretor = bruto.startsWith("//");
+  const texto = diretor ? bruto.slice(2).trim() : bruto;
+  if (!texto) return;
+
+  campo.value = ""; campo.style.height = "auto";
+  bolha(diretor ? "eu off" : "eu", (diretor ? "▸ " : "") + texto);
+
+  ocupado = true;
+  const alvo = bolha("mestre cursor", "");
+  let acc = "";
+
+  try {
+    const r = await fetch("/api/turno", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({texto, diretor})});
+    const leitor = r.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for(;;){
+      const {value, done} = await leitor.read();
+      if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const partes = buf.split("\n\n"); buf = partes.pop();
+      for (const p of partes){
+        const ev = /^event: (\w+)/m.exec(p), dt = /^data: (.*)$/m.exec(p);
+        if (!ev || !dt) continue;
+        const carga = JSON.parse(dt[1]);
+        if (ev[1] === "texto"){
+          const colado = perto();
+          acc += carga.t;
+          alvo.innerHTML = enfeita(acc);
+          if (colado) noFim();
+        } else if (ev[1] === "fim"){
+          alvo.classList.remove("cursor");
+          const est = await carregar(carga.mudou);
+          if (carga.mudou && carga.mudou.length){
+            const g = document.createElement("div");
+            g.className = "gravou";
+            g.textContent = "anotado na campanha — " + carga.mudou.join("  ·  ");
+            fio.appendChild(g);
+          }
+        } else if (ev[1] === "erro"){
+          alvo.classList.remove("cursor");
+          bolha("erro", carga.msg);
+        }
+      }
+    }
+  } catch(e){
+    alvo.classList.remove("cursor");
+    bolha("erro", "Caiu a conexão com o servidor da mesa: " + e.message);
+  }
+  alvo.classList.remove("cursor");
+  if (!acc.trim()) alvo.remove();
+  ocupado = false; campo.focus(); noFim();
+}
+
+$("#btnLimpar").onclick = async () => {
+  if (!confirm("Apaga só o histórico da conversa.\nO diário, a ficha e a lore continuam intactos.\n\nApagar?")) return;
+  await fetch("/api/apagar-conversa", {method:"POST"});
+  fio.innerHTML = "";
+  bolha("mestre", "*Conversa limpa. A campanha continua — o Mestre ainda lembra pelo diário e pela lore.*");
+};
+
+/* ---------- inicio ---------- */
+(async () => {
+  const r = await carregar();
+  if (r.historico && r.historico.length){
+    for (const h of r.historico) bolha(h.papel === "user" ? "eu" : "mestre", h.texto);
+  } else {
+    bolha("mestre", "*O braseiro está aceso. Diga quem é o seu personagem — ou só escreva o que ele está fazendo agora, e eu descubro o resto no caminho.*");
+  }
+  noFim(); campo.focus();
+})();
+</script>
+</body>
+</html>
