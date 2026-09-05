@@ -1,3 +1,5 @@
+> 🇧🇷 **Português** · 🇬🇧 [English](diario-de-bordo.en.md)
+
 # Diário de bordo
 
 O que foi medido, o que quebrou, e o que mudou por causa disso. Está aqui porque
@@ -193,13 +195,44 @@ opcional em a coisa mais importante da documentação de livros.
 
 ---
 
+## Lendo PDF sem dependência
+
+Adicionar biblioteca quebraria a premissa do projeto, então o extrator é escrito
+à mão em `mestre/pdf.ps1`.
+
+As partes que realmente exigiram cuidado:
+
+- **FlateDecode é zlib, e o `DeflateStream` só entende deflate cru.** Pular os 2
+  bytes de cabeçalho resolve; o Adler-32 do fim é simplesmente ignorado.
+- **Escape octal** é o que faz `cora\347\343o` sair como `coração`.
+- **Arrays `TJ`** carregam kerning entre pedaços de string. Sem transformar valor
+  abaixo de -100 em espaço, `[(Ata) -300 (que)] TJ` sai grudado na palavra seguinte.
+- **PDF não tem `##`.** Sem promover títulos, um livro inteiro viraria pedaços sem
+  título — e pedaço sem título é inalcançável, porque só termo forte dispara. Daí
+  promover linha curta em caixa alta ou isolada, e ainda tirar termos do próprio
+  texto do pedaço como rede de segurança.
+
+Recusa em vez de estragar: PDF escaneado e fonte com codificação própria geram um
+`.pdf.aviso` e não indexam nada.
+
+Testado contra PDFs gerados dentro do próprio teste — sem compressão, com
+FlateDecode, só imagem e ilegível de propósito — porque é o único jeito de
+exercitar os quatro caminhos de forma determinística.
+
+---
+
 ## Armadilhas de plataforma
 
 **`-LiteralPath` não expande curinga.** `Copy-Item -LiteralPath "pasta\*"` copia
 zero arquivos e **não dá erro**. O `*` é tratado como nome literal.
 
 **MAX_PATH ainda existe.** `Bitmap.Save()` num caminho de 260+ caracteres falha
-com "Erro genérico de GDI+", sem dizer que o problema é o tamanho do caminho.
+com "Erro genérico de GDI+", sem dizer que o problema é o tamanho do caminho. O
+`git init` numa pasta funda quebra igual, no `.git/objects` — resolvido com
+`core.longpaths`.
+
+**Variável do PowerShell não diferencia maiúscula.** Um laço usando `$r` apagou em
+silêncio o `$R`, que guardava o caminho do repositório.
 
 **`BinaryWriter.Write($byteArray)`** com um array vindo de `+=` em PowerShell não
 liga na sobrecarga certa: o `.ico` saiu com 118 bytes — exatamente o cabeçalho,
@@ -229,6 +262,6 @@ o espaço no destino antes de começar, e no fim lembra de apagar o original.
 | busca semântica com embeddings | mais um modelo na VRAM; não sobra em 3,2 GB |
 | `autorun.inf` pro ícone do pendrive | assinatura clássica de vírus; antivírus põe em quarentena |
 | auto-execução ao plugar | desativado no Windows desde 2009, sem contorno seguro |
-| leitura de PDF | exigiria dependência; "salvar como texto" resolve |
+| OCR pra PDF escaneado | exigiria dependência de verdade; "salvar como texto" cobre |
 | JSON no bloco oculto | modelo de 8-12B erra JSON; delimitador de texto tolera erro |
 | tool calling nativo | finetunes de roleplay costumam perder essa capacidade |
