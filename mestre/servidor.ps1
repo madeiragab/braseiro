@@ -41,6 +41,9 @@ function Slug($s) {
   $x
 }
 
+# leitura de PDF: ExtrairTextoPdf
+. (Join-Path $PSScriptRoot "pdf.ps1")
+
 # ------------------------------------------------------------------- config
 
 $Cfg = @{
@@ -113,10 +116,64 @@ function TermosDe($txt) {
       Select-Object -Unique)
 }
 
+# termos tirados do proprio texto, pra secao que nao tem titulo (o caso do PDF
+# convertido, onde nem sempre da pra detectar cabecalho)
+function TermosFrequentes($txt, $quantos) {
+  if (-not $txt) { return @() }
+  $t = SemAcento $txt
+  $t = [Regex]::Replace($t, "[^a-z0-9]+", " ")
+  $fora = @("para","como","pelo","pela","mais","cada","pode","quando","onde","esse","essa",
+            "isso","aquele","seus","suas","este","esta","entre","sobre","todos","todas","ser",
+            "que","uma","dos","das","nao","com","por","sem","the","and","for","you","your")
+  $c = @{}
+  foreach ($p in ($t -split "\s+")) {
+    if ($p.Length -lt 5 -or $fora -contains $p) { continue }
+    $k = $p.Substring(0, [Math]::Min($p.Length, 6))
+    if ($c.ContainsKey($k)) { $c[$k]++ } else { $c[$k] = 1 }
+  }
+  @($c.GetEnumerator() | Where-Object { $_.Value -ge 2 } |
+      Sort-Object -Property @{e={$_.Value};Descending=$true} |
+      Select-Object -First $quantos | ForEach-Object { $_.Key })
+}
+
+# PDF vira um .pdf.txt do lado, uma vez so. Dali pra frente e texto como qualquer
+# outro. Se a extracao nao prestar, grava um .pdf.aviso e NAO indexa nada:
+# meio livro em garrancho estraga mais a campanha do que livro nenhum.
+$script:PdfConvertidos = @()
+$script:PdfFalhos      = @()
+
+function ConverterPdfs {
+  $script:PdfConvertidos = @()
+  $script:PdfFalhos      = @()
+  if (-not (Test-Path -LiteralPath $DirLivros)) { return }
+  foreach ($p in @(Get-ChildItem -LiteralPath $DirLivros -Recurse -File -Filter *.pdf -ErrorAction SilentlyContinue)) {
+    $cache = $p.FullName + ".txt"
+    $aviso = $p.FullName + ".aviso"
+    $nome  = $p.FullName.Substring($DirLivros.Length).TrimStart('\', '/')
+
+    $atual = (Test-Path -LiteralPath $cache) -and ((Get-Item -LiteralPath $cache).LastWriteTimeUtc -ge $p.LastWriteTimeUtc)
+    $jaFalhou = (Test-Path -LiteralPath $aviso) -and ((Get-Item -LiteralPath $aviso).LastWriteTimeUtc -ge $p.LastWriteTimeUtc)
+    if ($atual) { $script:PdfConvertidos += $nome; continue }
+    if ($jaFalhou) { $script:PdfFalhos += ($nome + " - " + ((Ler $aviso) -split "`r?`n")[0]); continue }
+
+    try { $r = ExtrairTextoPdf $p.FullName } catch { $r = $null }
+    if ($null -ne $r -and $r.texto) {
+      Gravar $cache ("<!-- gerado do PDF " + $p.Name + ". Pode editar a vontade: so e refeito se o PDF mudar. -->`n`n" + $r.texto)
+      if (Test-Path -LiteralPath $aviso) { Remove-Item -LiteralPath $aviso -Force }
+      $script:PdfConvertidos += $nome
+    } else {
+      $m = if ($r) { $r.motivo } else { "erro ao ler o arquivo" }
+      Gravar $aviso $m
+      $script:PdfFalhos += ($nome + " - " + $m)
+    }
+  }
+}
+
 function IndexarLivros {
   if (-not (Test-Path -LiteralPath $DirLivros)) {
     $script:LivrosIdx = @(); $script:LivrosSelo = "vazio"; return
   }
+  ConverterPdfs
   $arqs = @(Get-ChildItem -LiteralPath $DirLivros -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -match '^\.(md|markdown|txt)$' })
   $selo = (($arqs | ForEach-Object { $_.FullName + $_.LastWriteTimeUtc.Ticks }) -join "|")
@@ -157,11 +214,17 @@ function IndexarLivros {
             # termos FORTES (titulo + chaves) sao os unicos que disparam a secao.
             # os do caminho do arquivo sao FRACOS: valem so pra desempate, senao
             # uma palavra do nome do arquivo puxaria o livro inteiro de uma vez.
+            $fortes = @(@(TermosDe $titulo) + @(TermosDe $chaves) | Select-Object -Unique)
+            # pedaco sem titulo de verdade (PDF convertido costuma cair aqui) ficaria
+            # inalcancavel, porque so termo forte dispara. Entao tira do proprio texto.
+            if ($titulo -eq $f.BaseName) {
+              $fortes = @($fortes + @(TermosFrequentes $pedaco 8) | Select-Object -Unique)
+            }
             [void]$idx.Add([pscustomobject]@{
               titulo = $rot
               livro  = $livro
               corpo  = $pedaco
-              termos = @(@(TermosDe $titulo) + @(TermosDe $chaves) | Select-Object -Unique)
+              termos = $fortes
               fracos = @($termosArq)
             })
           }
@@ -246,12 +309,28 @@ Arquivo sem nenhum titulo e cortado sozinho em pedacos de ~1200 caracteres.
 
 Salvou um arquivo novo? Ele entra no indice na jogada seguinte, sem reiniciar.
 
-PDF NAO SERVE. Tem que ser texto (.md ou .txt). No leitor de PDF, "Salvar como
-texto" ou copiar e colar o capitulo que interessa ja resolve.
+PDF FUNCIONA. Solte o .pdf aqui e ele vira um .pdf.txt do lado, uma vez so.
+Da certo com PDF gerado por editor de texto. NAO da certo com PDF escaneado
+(pagina que e foto, sem texto por baixo) - ali so com OCR, que nao tem aqui.
+Quando nao da, aparece um .pdf.aviso explicando, e nada e indexado: meio livro
+em garrancho estraga mais a campanha do que livro nenhum.
+
+O .pdf.txt e um arquivo comum: pode abrir, arrumar o corte e por linhas
+"chaves:". Ele so e refeito se voce trocar o PDF.
 "@
   }
   $porLivro = @($script:LivrosIdx | Group-Object livro | Sort-Object Name)
   $t = "{0} secoes indexadas, em {1} arquivo(s).`nO Mestre puxa no maximo 4 por jogada - so as citadas.`n`n" -f $script:LivrosIdx.Count, $porLivro.Count
+  if ($script:PdfConvertidos.Count -gt 0) {
+    $t += "PDF convertido em texto:`n"
+    foreach ($n in $script:PdfConvertidos) { $t += "  ok  $n`n" }
+    $t += "`n"
+  }
+  if ($script:PdfFalhos.Count -gt 0) {
+    $t += "PDF que NAO deu pra ler:`n"
+    foreach ($n in $script:PdfFalhos) { $t += "  !!  $n`n" }
+    $t += "`nPra esses, abra no leitor de PDF e use 'Salvar como' texto, ou copie`ne cole o capitulo que interessa num .md aqui.`n`n"
+  }
   foreach ($g in $porLivro) {
     $t += "## {0}   ({1} secoes)`n" -f $g.Name, $g.Count
     foreach ($s in $g.Group) { $t += "  - {0}`n" -f $s.titulo }
