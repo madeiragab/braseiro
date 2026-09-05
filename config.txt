@@ -1,0 +1,27 @@
+# Configuracao da Mesa. Edite com o Bloco de Notas.
+
+# Modelo usado pelo Mestre.
+#  mistral-nemo:12b-instruct-2407-q4_K_M  -> melhor portugues, narracao boa       (7.1 GB, ~5 tok/s)
+#  hf.co/TheDrummer/Rocinante-12B-v1.1-GGUF:Q4_K_M -> narracao/NPC melhores, PT um pouco pior (7.1 GB, ~5 tok/s)
+#  qwen3:8b            -> quase o dobro da velocidade, narracao mais seca         (5.0 GB, ~12 tok/s)
+#  gemma3:4b           -> rapidao pra testar, mestre fraco                        (3.3 GB, ~25 tok/s)
+modelo=mistral-nemo:12b-instruct-2407-q4_K_M
+
+# Tamanho da janela de contexto.
+# MEDIDO nesta maquina: a GTX 1650 tem 4 GB, mas so 3,2 GB ficam utilizaveis.
+# O proprio Ollama sugere 4096. 6144 passa porque a lore entra filtrada,
+# nao inteira. Se travar ou der erro de memoria, baixe pra 4096.
+contexto=6144
+
+# Camadas jogadas na GPU. auto deixa o Ollama decidir.
+# Na GTX 1650 (4 GB), se der erro de memoria, fixe em 16.
+camadas_gpu=auto
+
+# Criatividade. 0.8-1.0 pra RPG. Abaixo de 0.6 fica repetitivo.
+temperatura=0.85
+
+# Quantas mensagens recentes vao no contexto. O resto vive no diario e na lore.
+historico=14
+
+# Porta do painel. So mude se der conflito.
+porta=11500
