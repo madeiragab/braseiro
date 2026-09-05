@@ -149,6 +149,24 @@
   font:inherit;font-size:13px;transition:.15s
 }
 #btnSair:hover{color:#e0705a;border-color:#e0705a;border-style:solid}
+  .xis{
+    background:none;border:1px solid var(--linha);color:var(--fraco);
+    border-radius:5px;padding:4px 8px;cursor:pointer;line-height:1;font-size:14px
+  }
+  .xis:hover{color:#e0705a;border-color:#e0705a}
+  #listaLivros{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+  #listaLivros .item{
+    display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fraco);
+    padding:4px 6px;border-radius:5px;background:#14110f
+  }
+  #listaLivros .item span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #listaLivros .item .kb{flex:none;color:#5f524c;font-size:11px}
+  #listaLivros .item button{
+    flex:none;background:none;border:none;color:#5f524c;cursor:pointer;
+    font-size:15px;line-height:1;padding:0 3px
+  }
+  #listaLivros .item button:hover{color:#e0705a}
+  #listaLivros .vazio{font-size:12px;color:#5f524c;padding:4px 6px}
 #apagado{
   position:fixed;inset:0;z-index:99;display:none;place-items:center;
   background:#12100f;color:#8b7a72;text-align:center;font-size:15px;line-height:1.9
@@ -202,11 +220,13 @@
     <select id="selMesa" title="campanha aberta"></select>
     <button id="btnNova" title="começar outra campanha">+ nova</button>
     <button id="btnPasta" title="abrir a pasta no Explorador">📁</button>
+    <button id="btnApagarMesa" class="xis" title="apagar esta campanha">×</button>
   </div>
   <div id="ondeSalva"></div>
   <div style="padding:0 12px 10px">
     <button id="btnLivros">📚 adicionar livros do sistema</button>
     <input type="file" id="arqLivros" multiple accept=".pdf,.md,.markdown,.txt" hidden>
+    <div id="listaLivros"></div>
     <button id="btnSair" title="fecha o Mestre e libera a memória">🔥 apagar o braseiro</button>
   </div>
   <div id="abas"></div>
@@ -251,6 +271,28 @@ function pintarMesas(r){
     s.appendChild(o);
   }
   $("#ondeSalva").textContent = r.pasta || "";
+  pintarLivros(r.livros || []);
+  // antes de /iniciar campanha ele é um chat comum: a dica só aparece aí
+  $("#dicaIniciar").hidden = !!r.iniciada;
+  $("#campo").placeholder = r.iniciada ? "O que você faz?" : "Converse, monte o personagem... e /iniciar campanha quando quiser começar";
+}
+
+function pintarLivros(livros){
+  const c = $("#listaLivros");
+  c.innerHTML = "";
+  if (!livros.length){
+    const v = document.createElement("div");
+    v.className = "vazio"; v.textContent = "nenhum livro nesta campanha";
+    c.appendChild(v); return;
+  }
+  for (const l of livros){
+    const d = document.createElement("div"); d.className = "item";
+    const s = document.createElement("span"); s.textContent = l.id; s.title = l.id;
+    const k = document.createElement("span"); k.className = "kb"; k.textContent = l.kb + " KB";
+    const b = document.createElement("button"); b.textContent = "×"; b.title = "apagar este livro";
+    b.onclick = () => apagarLivro(l.id);
+    d.append(s, k, b); c.appendChild(d);
+  }
 }
 
 async function carregar(destacar){
@@ -323,6 +365,31 @@ $("#btnNova").onclick = () => {
   if (n && n.trim()) trocarMesa(n.trim());
 };
 $("#btnPasta").onclick = () => fetch("/api/abrir-pasta", {method:"POST"});
+
+async function apagarLivro(id){
+  if (!confirm("Apagar o livro\n\n  " + id + "\n\nVai pra Lixeira do Windows, dá pra recuperar.")) return;
+  const r = await fetch("/api/livros/apagar", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({id})}).then(r => r.json());
+  if (!r.ok){ alert("Não consegui apagar: " + (r.erro || "erro")); return; }
+  await carregar();
+}
+
+$("#btnApagarMesa").onclick = async () => {
+  const nome = $("#selMesa").value;
+  if (!nome) return;
+  if (!confirm("Apagar a campanha\n\n  " + nome + "\n\nLeva junto ficha, diário, lore e livros dela.\nVai pra Lixeira do Windows, dá pra recuperar.")) return;
+  const r = await fetch("/api/campanha/apagar", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({nome})}).then(r => r.json());
+  if (!r.ok){ alert("Não consegui apagar: " + (r.erro || "erro")); return; }
+  atual = null; fio.innerHTML = "";
+  const est = await carregar();
+  if (est.historico && est.historico.length){
+    for (const h of est.historico) bolha(h.papel === "user" ? "eu" : "mestre", h.texto);
+  } else {
+    bolha("mestre", "*Campanha **" + est.campanha + "** aberta. O braseiro está aceso.*");
+  }
+  noFim();
+};
 
 $("#btnSair").onclick = async () => {
   if (!confirm("Apagar o braseiro?\n\nFecha o Mestre e descarrega o modelo da memória.\nA campanha já está salva no disco.")) return;

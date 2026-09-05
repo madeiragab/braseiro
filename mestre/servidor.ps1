@@ -217,6 +217,39 @@ function NomeSeguro($n) {
   $x
 }
 
+# Apagar aqui e apagar campanha inteira ou livro do sistema: coisa que da
+# trabalho pra refazer. Vai pra Lixeira do Windows, nao pro vazio, pra ter
+# volta se o clique foi errado.
+function ParaLixeira([string]$caminho) {
+  if (-not (Test-Path -LiteralPath $caminho)) { return $false }
+  $pasta = Test-Path -LiteralPath $caminho -PathType Container
+  try {
+    Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction Stop
+    $ui = [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs
+    $lx = [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin
+    if ($pasta) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($caminho, $ui, $lx) }
+    else         { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($caminho, $ui, $lx) }
+    return $true
+  } catch {
+    # sem Lixeira disponivel (pendrive, unidade de rede): apaga direto
+    try {
+      if ($pasta) { [IO.Directory]::Delete($caminho, $true) } else { [IO.File]::Delete($caminho) }
+    } catch {}
+    return (-not (Test-Path -LiteralPath $caminho))
+  }
+}
+
+# Os arquivos de livro da campanha, com o caminho relativo que a tela usa.
+function ListarLivros {
+  if (-not (Test-Path -LiteralPath $DirLivros)) { return @() }
+  @(Get-ChildItem -LiteralPath $DirLivros -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.Extension -match '^\.(md|markdown|txt|pdf)$' } |
+      Sort-Object FullName | ForEach-Object {
+        @{ id = ($_.FullName.Substring($DirLivros.Length).TrimStart('\', '/') -replace '\\', '/')
+           kb = [math]::Round($_.Length / 1KB) }
+      })
+}
+
 function ListarCampanhas {
   @(Get-ChildItem -LiteralPath $PastaCampanhas -Directory -ErrorAction SilentlyContinue |
       Sort-Object Name | ForEach-Object { $_.Name })
@@ -1837,6 +1870,7 @@ while ($listener.IsListening) {
       Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json @{
         arquivos = $arqs; historico = $hist; modelo = $Cfg.modelo
         campanha = $NomeCampanha; campanhas = @(ListarCampanhas); pasta = $Campanha
+        livros = @(ListarLivros); iniciada = [bool]$script:Iniciada
       } -Depth 6)
     }
 
@@ -1849,6 +1883,58 @@ while ($listener.IsListening) {
       Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json @{
         ok = $true; campanha = $NomeCampanha; campanhas = @(ListarCampanhas); pasta = $Campanha
       } -Depth 4)
+    }
+
+    elseif ($rota -eq "/api/livros/apagar") {
+      $d  = (CorpoDe $req) | ConvertFrom-Json
+      $id = ([string]$d.id) -replace '\\', '/'
+      # o id vem da tela: so caminho relativo, nunca subir de pasta
+      if (-not $id -or $id -match '\.\.' -or $id -match '^[/~]' -or $id -match '^[A-Za-z]:') {
+        Responder $resp 400 "application/json; charset=utf-8" (ConvertTo-Json @{ ok = $false; erro = "caminho invalido" })
+      } else {
+        $alvo = Join-Path $DirLivros ($id -replace '/', '\')
+        $raiz = [IO.Path]::GetFullPath($DirLivros)
+        $cheio = [IO.Path]::GetFullPath($alvo)
+        if (-not $cheio.StartsWith($raiz, [StringComparison]::OrdinalIgnoreCase)) {
+          Responder $resp 400 "application/json; charset=utf-8" (ConvertTo-Json @{ ok = $false; erro = "fora da pasta de livros" })
+        } else {
+          $foi = ParaLixeira $cheio
+          # PDF deixa um .pdf.txt convertido do lado: vai junto
+          if ($cheio -match '(?i)\.pdf$') { $null = ParaLixeira ($cheio + '.txt') }
+          # pasta que ficou vazia so atrapalha a lista
+          $pai = Split-Path $cheio -Parent
+          if ($pai -ne $raiz -and (Test-Path -LiteralPath $pai) -and
+              -not (Get-ChildItem -LiteralPath $pai -Recurse -File -ErrorAction SilentlyContinue)) {
+            $null = ParaLixeira $pai
+          }
+          $script:LivrosIdx = $null; $script:LivrosSelo = $null   # forca reindexar
+          Write-Host ("   livro apagado: " + $id) -ForegroundColor DarkYellow
+          Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json @{ ok = $foi; livros = @(ListarLivros) } -Depth 4)
+        }
+      }
+    }
+
+    elseif ($rota -eq "/api/campanha/apagar") {
+      $d = (CorpoDe $req) | ConvertFrom-Json
+      $alvo = NomeSeguro $d.nome
+      $todas = @(ListarCampanhas)
+      if ($todas.Count -le 1) {
+        Responder $resp 400 "application/json; charset=utf-8" (ConvertTo-Json @{ ok = $false; erro = "esta e a unica campanha" })
+      } elseif ($todas -notcontains $alvo) {
+        Responder $resp 404 "application/json; charset=utf-8" (ConvertTo-Json @{ ok = $false; erro = "nao existe" })
+      } else {
+        # se for a que esta aberta, muda de mesa ANTES de apagar o chao
+        if ($alvo -eq $NomeCampanha) {
+          $outra = @($todas | Where-Object { $_ -ne $alvo })[0]
+          AbrirCampanha $outra
+          GravarConfig "campanha" $outra
+        }
+        $foi = ParaLixeira (Join-Path $PastaCampanhas $alvo)
+        Write-Host ("   campanha pra Lixeira: " + $alvo) -ForegroundColor DarkYellow
+        Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json @{
+          ok = $foi; campanha = $NomeCampanha; campanhas = @(ListarCampanhas); pasta = $Campanha
+        } -Depth 4)
+      }
     }
 
     elseif ($rota -eq "/api/livros/soltar") {
