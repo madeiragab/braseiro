@@ -252,6 +252,10 @@ function AbrirCampanha($nome) {
   if (Test-Path -LiteralPath $script:ArqHist) {
     try { $script:Historico = @((Ler $script:ArqHist) | ConvertFrom-Json) } catch { $script:Historico = @() }
   }
+  # Antes de /iniciar campanha o Mestre e so um chat: da pra montar personagem,
+  # combinar tom e tirar duvida sem gastar dado nem escrever no diario.
+  $script:ArqInicio = Join-Path $script:Campanha ".iniciada"
+  $script:Iniciada  = Test-Path -LiteralPath $script:ArqInicio
   $script:LivrosIdx  = $null      # o indice e por campanha
   $script:LivrosSelo = $null
 }
@@ -1150,6 +1154,20 @@ Termine com o que esta na frente dele agora - e pare ai.
   , $msgs
 }
 
+# Modo conversa: sem dado, sem ficha, sem diario. So papo.
+$CONVERSA = @'
+Voce ajuda alguem a preparar uma mesa de RPG. A campanha ainda NAO comecou.
+
+Converse normal, em portugues do Brasil. Responda pergunta sobre regra, ajude
+a montar personagem, sugira ideia de mundo, discuta tom. Seja direto e curto.
+
+Voce NAO esta narrando nada ainda. Nao descreva cena, nao invente que o
+personagem esta em algum lugar, nao role dado, nao fale pelo jogador.
+
+Quando ele quiser comecar de verdade, ele digita /iniciar campanha. Ate la, so
+conversa. Se ele parecer pronto, lembre disso numa linha - sem insistir.
+'@
+
 $EXTRATOR = @'
 Voce e um anotador de mesa de RPG. Nao narra, nao inventa, nao opina.
 
@@ -1922,6 +1940,18 @@ while ($listener.IsListening) {
       $d       = (CorpoDe $req) | ConvertFrom-Json
       $entrada = [string]$d.texto
       $diretor = [bool]$d.diretor
+      $entradaOriginal = $entrada
+
+      # /iniciar campanha e a virada de chave: antes disso e conversa, depois
+      # entra tudo - dado, ficha, diario, aliado com turno proprio.
+      $comecouAgora = $false
+      if (-not $script:Iniciada -and $entrada -match '(?i)^\s*/\s*iniciar\b') {
+        Gravar $script:ArqInicio ((Get-Date).ToString('yyyy-MM-dd HH:mm'))
+        $script:Iniciada = $true
+        $comecouAgora = $true
+        $entrada = 'Abra a primeira cena da campanha, onde o personagem esta agora.'
+        Write-Host "   a campanha comecou" -ForegroundColor Green
+      }
 
       $resp.ContentType = "text/event-stream; charset=utf-8"
       $resp.Headers.Add("Cache-Control", "no-cache")
@@ -1931,6 +1961,7 @@ while ($listener.IsListening) {
 
       try {
         # 1 de 3: o juiz resolve os numeros antes de qualquer narracao
+        # (so depois de /iniciar campanha - no modo conversa nao se rola nada)
         $rng = New-Object Random
         $sorteados = @(1..8 | ForEach-Object { $rng.Next(1, 21) })
         # se o jogador rolou o proprio dado e informou ("ataco com as correntes / 20"),
@@ -1951,7 +1982,7 @@ while ($listener.IsListening) {
         # o historico e concatena $entrada no RESULTADO - a acao do jogador nunca
         # chegava, e na primeira jogada a calculadora nem rodava.
         $textoDaCena = (($Historico | Select-Object -Last 4 | ForEach-Object { $_.texto }) -join " ") + " " + $entrada
-        if (-not $diretor -and (CenaTemRisco $textoDaCena)) {
+        if ($script:Iniciada -and -not $diretor -and (CenaTemRisco $textoDaCena)) {
           $sw.Write("event: calculando`ndata: {}`n`n")
           # CalcularCena ja grava a ficha nova e ja resolve os numeros
           $mecanica = CalcularCena $entrada $script:DadosDaVez
@@ -1959,7 +1990,17 @@ while ($listener.IsListening) {
         }
 
         # 2 de 3: narrar
-        $msgs = MontarMensagens $entrada $diretor $mecanica
+        if ($script:Iniciada) {
+          $msgs = MontarMensagens $entrada $diretor $mecanica
+        } else {
+          # modo conversa: so o papo e o historico, sem lorebook nem ficha
+          $msgs = New-Object Collections.ArrayList
+          [void]$msgs.Add(@{ role = 'system'; content = $CONVERSA })
+          foreach ($h in @($Historico | Select-Object -Last $MaxHist)) {
+            [void]$msgs.Add(@{ role = [string]$h.papel; content = [string]$h.texto })
+          }
+          [void]$msgs.Add(@{ role = 'user'; content = $entrada })
+        }
         $opts = @{
           temperature = [double]$Cfg.temperatura
           num_ctx     = [int]$Cfg.contexto
@@ -1981,7 +2022,10 @@ while ($listener.IsListening) {
         $os = $r.GetRequestStream(); $os.Write($pb, 0, $pb.Length); $os.Close()
         $rd = New-Object IO.StreamReader($r.GetResponse().GetResponseStream(), [Text.Encoding]::UTF8)
 
-        $nomeJog = if ((Ler (Join-Path $Campanha '02-personagem.md')) -match '(?im)^\s*-\s*nome\s*:\s*(.+)$') { $Matches[1].Trim() } else { '' }
+        # no modo conversa o nome fica vazio de proposito: sem corte de fala e
+        # sem a linha de devolver a vez, que ali nao faz sentido nenhum.
+        $nomeJog = ''
+        if ($script:Iniciada -and (Ler (Join-Path $Campanha '02-personagem.md')) -match '(?im)^\s*-\s*nome\s*:\s*(.+)$') { $nomeJog = $Matches[1].Trim() }
         $full = ""; $emitido = 0; $cortado = $false
         while (-not $rd.EndOfStream) {
           $linha = $rd.ReadLine()
@@ -2031,12 +2075,16 @@ while ($listener.IsListening) {
         $narracao = if ($i -ge 0) { LimparNarracao $full.Substring(0, $i) $nomeJog $entrada } else { LimparNarracao $full $nomeJog $entrada }
 
         # Segunda chamada, so pra anotar. O jogador ja esta lendo a cena.
-        $sw.Write("event: anotando`ndata: {}`n`n")
-        # 3 de 3: anotar
-        $bloco = PedirBloco $narracao
-        $mudou = AplicarAtualizacao $bloco $diretor
+        $bloco = ''
+        $mudou = @()
+        if ($script:Iniciada) {
+          $sw.Write("event: anotando`ndata: {}`n`n")
+          # 3 de 3: anotar
+          $bloco = PedirBloco $narracao
+          $mudou = AplicarAtualizacao $bloco $diretor
+        }
 
-        $Historico += @{ papel = "user";      texto = $entrada }
+        $Historico += @{ papel = "user";      texto = $entradaOriginal }
         # guarda o bloco separado: a tela nunca ve, mas ele volta pro modelo
         # nas duas ultimas respostas, como exemplo do formato certo
         $Historico += @{ papel = "assistant"; texto = $narracao; bloco = $bloco }
