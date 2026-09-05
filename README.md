@@ -1,3 +1,5 @@
+> 🇧🇷 **Português** · 🇬🇧 [English](README.en.md)
+
 <h1 align="center">🔥 Braseiro</h1>
 
 <p align="center">

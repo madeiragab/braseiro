@@ -1,3 +1,5 @@
+> 🇧🇷 **Português** · 🇬🇧 [English](arquitetura.en.md)
+
 # Arquitetura
 
 Três processos, nenhum instalado.

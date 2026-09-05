@@ -1,3 +1,5 @@
+> 🇧🇷 **Português** · 🇬🇧 [English](memoria.en.md)
+
 # A memória
 
 ## O erro comum
