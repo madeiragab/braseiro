@@ -607,7 +607,7 @@ Write-Host "   aberto em http://localhost:$Porta" -ForegroundColor Green
 Write-Host "   Modelo:   $($Cfg.modelo)   contexto: $($Cfg.contexto)" -ForegroundColor DarkGray
 Write-Host "   Campanha: $NomeCampanha" -ForegroundColor DarkGray
 Write-Host "   Gravando em $Campanha" -ForegroundColor DarkGray
-Write-Host "   Feche esta janela pra apagar o braseiro." -ForegroundColor DarkGray
+Write-Host "   Pra fechar: o botao 'apagar o braseiro' na tela, ou feche esta janela." -ForegroundColor DarkGray
 Write-Host ""
 
 while ($listener.IsListening) {
@@ -688,6 +688,29 @@ while ($listener.IsListening) {
         $script:LivrosSelo = $null      # forca reindexar na proxima leitura
         Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json $r -Depth 4)
       }
+    }
+
+    # Sair de verdade: o que come RAM nao e este servidor (uns 60 MB), e o
+    # modelo carregado dentro do Ollama - 3,3 GB parados ate o keep_alive
+    # vencer. Entao antes de fechar a gente manda descarregar e derruba o motor.
+    elseif ($rota -eq "/api/sair") {
+      Responder $resp 200 "application/json" '{"ok":true}'
+      Write-Host "" 
+      Write-Host "   apagando o braseiro..." -ForegroundColor DarkYellow
+      try {
+        $corpo = ConvertTo-Json @{ model = $Cfg.modelo; keep_alive = 0 } -Compress
+        $rq = [Net.HttpWebRequest]::Create("$Ollama/api/generate")
+        $rq.Method = "POST"; $rq.ContentType = "application/json"; $rq.Timeout = 10000
+        $bb = $UTF8.GetBytes($corpo); $rq.ContentLength = $bb.Length
+        $st = $rq.GetRequestStream(); $st.Write($bb, 0, $bb.Length); $st.Close()
+        $rq.GetResponse().Close()
+        Write-Host "   modelo descarregado da memoria" -ForegroundColor DarkGray
+      } catch { Write-Host "   (o motor ja estava fora)" -ForegroundColor DarkGray }
+      foreach ($pr in @(Get-Process ollama -ErrorAction SilentlyContinue)) {
+        try { $pr.Kill(); Write-Host "   motor encerrado" -ForegroundColor DarkGray } catch {}
+      }
+      try { $listener.Stop() } catch {}
+      break
     }
 
     elseif ($rota -eq "/api/abrir-pasta") {
