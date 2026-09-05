@@ -108,7 +108,11 @@
   #mesas select{
     flex:1;min-width:0;background:#14110f;border:1px solid var(--linha);
     border-radius:5px;padding:5px 7px;font-size:12.5px;outline:none;
+    /* sem color e color-scheme o texto sai preto no fundo escuro e a lista
+       que o sistema abre vem branca no meio do tema */
+    color:var(--texto);color-scheme:dark;font-family:inherit;cursor:pointer;
   }
+  #mesas select option{background:#14110f;color:var(--texto)}
   #mesas select:focus{border-color:var(--brasa)}
   #mesas button{
     background:none;border:1px solid var(--linha);color:var(--fraco);
@@ -249,7 +253,7 @@ function pintarMesas(r){
 }
 
 async function carregar(destacar){
-  const r = await fetch("/api/estado").then(r => r.json());
+  const r = await fetch("/api/estado", {cache:"no-store"}).then(r => r.json());
   arquivos = r.arquivos;
   pintarMesas(r);
   const abas = $("#abas");

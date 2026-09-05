@@ -1754,9 +1754,17 @@ function GravarFichasNovas([string]$mecanica) {
 
 # ------------------------------------------------------------- HTTP helpers
 
+# Sem cabecalho de cache o navegador guardava /api/estado e o ui.html. Trocar
+# de campanha parecia nao limpar os livros: a lista vinha do cache, nao do
+# disco. O servidor e local, entao cache aqui nao economiza nada e so engana.
 function Responder($resp, $codigo, $tipo, $corpo) {
   $b = $UTF8.GetBytes([string]$corpo)
   $resp.StatusCode = $codigo
+  try {
+    $resp.Headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    $resp.Headers['Pragma'] = 'no-cache'
+    $resp.Headers['Expires'] = '0'
+  } catch {}
   $resp.ContentType = $tipo
   $resp.ContentLength64 = $b.Length
   $resp.OutputStream.Write($b, 0, $b.Length)
