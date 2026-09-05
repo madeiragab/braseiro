@@ -204,15 +204,18 @@ Não é frescura: em pendrive isso custa ~96 segundos de espera a cada abertura.
 
 Escreva o que seu personagem faz. É isso.
 
-**Falar fora da ficção** — comece com `//`:
+**Falar fora da ficção** — comece a mensagem com `mestre:`
 
 ```
-// esse NPC morreu na sessão passada, apaga ele
-// meu personagem é maneta, lembra disso
-// menos descrição de cheiro, tá exagerado
+mestre: esse NPC morreu na sessão passada, apaga ele
+mestre: meu personagem é maneta, lembra disso
+mestre: menos descrição de cheiro, tá exagerado
 ```
 
 Ele não narra isso como cena: acata, corrige os arquivos e volta pra cena.
+
+Não diferencia maiúscula, e o espaço depois dos dois-pontos é opcional.
+`//` continua funcionando como atalho curto.
 
 **Corrigir de verdade** — o painel da direita edita qualquer arquivo da campanha.
 Salvou, vale na jogada seguinte.
