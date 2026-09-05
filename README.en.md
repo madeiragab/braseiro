@@ -53,7 +53,7 @@ sequenceDiagram
     actor P as Player
     participant U as ui.html
     participant S as servidor.ps1
-    participant C as campanha/
+    participant C as Documents/Braseiro
     participant O as Ollama
 
     P->>U: "I climb down the black well"
@@ -86,7 +86,7 @@ This is the heart of the project. Disk has no limit; the context has 6144 tokens
 
 ```mermaid
 flowchart LR
-    subgraph disk["📁 campanha/ — disk, no limit"]
+    subgraph disk["📁 Documents/Braseiro/<campaign>/ — disk, no limit"]
         direction TB
         M["00-mestre.md<br/>how the GM behaves"]
         W["01-mundo.md<br/>the setting"]
@@ -204,6 +204,28 @@ flame icon, in the folder above — the drive root, if the project lives in
 
 ---
 
+## Where the campaign is saved
+
+**Not on the flash drive.** Each table lives in:
+
+```
+Documents\Braseiro\<campaign name>\
+```
+
+The drive carries only the program. Campaigns stay on the computer, so they
+survive losing the drive, get picked up by Windows backup, and you can run
+several tables at once without one stepping on another.
+
+The selector at the top of the right-hand panel switches tables, creates a new
+one (**+ nova**), and opens the folder in Explorer (**📁**). Your choice is
+written back to `config.txt` automatically.
+
+A new campaign is born by copying the `modelo/` folder that ships with the
+program — empty history, with the setting and the GM's rules ready for you to
+rewrite.
+
+---
+
 ## Usage
 
 Write what your character does. That's it.
@@ -230,11 +252,11 @@ Save it and it applies on the next turn.
 
 ## The rulebooks
 
-Drop `.pdf`, `.md` or `.txt` files into `campanha/livros/`, with as many
+Drop `.pdf`, `.md` or `.txt` files into your campaign's `livros/` folder, with as many
 subfolders as you like:
 
 ```
-campanha/livros/
+Documents/Braseiro/minha-campanha/livros/
 ├── dnd5e/
 │   ├── combat.md
 │   └── spells.md
@@ -281,8 +303,10 @@ All in `config.txt`, in any text editor:
 | `temperatura` | `0.85` | below 0.6 it gets repetitive |
 | `historico` | `14` | recent messages kept in context |
 | `porta` | `11500` | panel port |
+| `campanha` | `minha-campanha` | which table to open (the panel selector also switches) |
+| `pasta_campanhas` | *(empty)* | empty = `Documents\Braseiro`; fill in to use somewhere else |
 
-The GM's **behaviour** is not configuration: it lives in `campanha/00-mestre.md`,
+The GM's **behaviour** is not configuration: it lives in your campaign's `00-mestre.md`,
 which is read whole as a direct instruction. Want horror instead of fantasy, or a
 different rules system? Rewrite that file.
 
@@ -308,20 +332,34 @@ braseiro/
 │   ├── atalho.ps1
 │   └── braseiro.ico
 │
-├── campanha/                ← your data; the GM reads and writes here
+├── modelo/                  ← seed for a new campaign (not live data)
+│   ├── 00-mestre.md
+│   ├── 01-mundo.md
+│   ├── 02-personagem.md
+│   ├── 03-diario.md
+│   ├── lore/
+│   └── livros/
+│
+├── bin/                     ← ollama.exe (not versioned)
+└── models/                  ← Ollama's store (not versioned)
+```
+
+And your data, **off** the flash drive:
+
+```
+Documents/Braseiro/
+├── minha-campanha/
 │   ├── 00-mestre.md         ← you
 │   ├── 01-mundo.md          ← you
 │   ├── 02-personagem.md     ← both
 │   ├── 03-diario.md         ← it
 │   ├── lore/                ← it
 │   └── livros/              ← you
-│
-├── bin/                     ← ollama.exe (not versioned)
-└── models/                  ← Ollama's store (not versioned)
+└── a-mao-do-rei/            ← another table, independent
 ```
 
 > File and folder names are Portuguese, and so is the GM's default voice. The
-> `campanha/00-mestre.md` file is a plain instruction file — rewrite it in English
+> `00-mestre.md` file in your campaign is a plain instruction file — rewrite it in English
 > and the game master will run your table in English.
 
 ---
@@ -361,6 +399,6 @@ Things that **don't** work, said plainly:
 
 MIT — see [LICENSE](LICENSE).
 
-The example content in `campanha/` (Vallengard, the Grey Waste) is original and
-ships under the same license. Any rulebooks **you** put in `campanha/livros/` are
+The example content in `modelo/` (Vallengard, the Grey Waste) is original and
+ships under the same license. Any rulebooks **you** put in your campaign's `livros/` folder are
 yours and have nothing to do with this repository.

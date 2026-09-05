@@ -51,7 +51,7 @@ sequenceDiagram
     actor J as Jogador
     participant U as ui.html
     participant S as servidor.ps1
-    participant C as campanha/
+    participant C as Documentos/Braseiro
     participant O as Ollama
 
     J->>U: "eu desço no poço negro"
@@ -84,7 +84,7 @@ Este é o coração do projeto. O disco não tem limite; o contexto tem 6144 tok
 
 ```mermaid
 flowchart LR
-    subgraph disco["📁 campanha/ — disco, sem limite"]
+    subgraph disco["📁 Documentos/Braseiro/<campanha>/ — disco, sem limite"]
         direction TB
         M["00-mestre.md<br/>como o Mestre se comporta"]
         W["01-mundo.md<br/>o cenário"]
@@ -202,6 +202,27 @@ Não é frescura: em pendrive isso custa ~96 segundos de espera a cada abertura.
 
 ---
 
+## Onde a campanha é gravada
+
+**Não é no pendrive.** Cada mesa vive em:
+
+```
+Documentos\Braseiro\<nome da campanha>\
+```
+
+O pendrive carrega só o programa. As campanhas ficam no computador, então
+sobrevivem a perder o pendrive, entram no backup do Windows, e você pode ter
+várias mesas ao mesmo tempo sem uma pisar na outra.
+
+No topo do painel da direita tem o seletor: troca de mesa, cria mesa nova
+(**+ nova**) e abre a pasta no Explorador (**📁**). A escolha é gravada no
+`config.txt` sozinha.
+
+Campanha nova nasce copiando a pasta `modelo/` que veio com o programa —
+histórico zerado, mundo e regras do Mestre prontos pra você reescrever.
+
+---
+
 ## Uso
 
 Escreva o que seu personagem faz. É isso.
@@ -226,10 +247,10 @@ Salvou, vale na jogada seguinte.
 
 ## Os livros do sistema
 
-Ponha `.md` ou `.txt` em `campanha/livros/`, com subpastas à vontade:
+Ponha `.pdf`, `.md` ou `.txt` na pasta `livros/` da sua campanha, com subpastas à vontade:
 
 ```
-campanha/livros/
+Documentos/Braseiro/minha-campanha/livros/
 ├── dnd5e/
 │   ├── combate.md
 │   └── magias.md
@@ -276,8 +297,10 @@ Tudo em `config.txt`, num editor de texto qualquer:
 | `temperatura` | `0.85` | abaixo de 0.6 fica repetitivo |
 | `historico` | `14` | mensagens recentes no contexto |
 | `porta` | `11500` | porta do painel |
+| `campanha` | `minha-campanha` | qual mesa abrir (o seletor no painel também troca) |
+| `pasta_campanhas` | *(vazio)* | vazio = `Documentos\Braseiro`; preencha pra usar outro lugar |
 
-O **comportamento** do Mestre não é config: está em `campanha/00-mestre.md`, que
+O **comportamento** do Mestre não é config: está no `00-mestre.md` da sua campanha, que
 é lido inteiro como ordem direta. Quer terror em vez de fantasia, ou outro
 sistema de regras? Reescreva esse arquivo.
 
@@ -303,16 +326,30 @@ braseiro/
 │   ├── atalho.ps1
 │   └── braseiro.ico
 │
-├── campanha/                ← seus dados; o Mestre lê e escreve aqui
+├── modelo/                  ← semente de campanha nova (não é dado vivo)
+│   ├── 00-mestre.md
+│   ├── 01-mundo.md
+│   ├── 02-personagem.md
+│   ├── 03-diario.md
+│   ├── lore/
+│   └── livros/
+│
+├── bin/                     ← ollama.exe (não versionado)
+└── models/                  ← acervo do Ollama (não versionado)
+```
+
+E os seus dados, **fora** do pendrive:
+
+```
+Documentos/Braseiro/
+├── minha-campanha/
 │   ├── 00-mestre.md         ← você
 │   ├── 01-mundo.md          ← você
 │   ├── 02-personagem.md     ← os dois
 │   ├── 03-diario.md         ← ele
 │   ├── lore/                ← ele
 │   └── livros/              ← você
-│
-├── bin/                     ← ollama.exe (não versionado)
-└── models/                  ← acervo do Ollama (não versionado)
+└── a-mao-do-rei/            ← outra mesa, independente
 ```
 
 ---
@@ -350,6 +387,6 @@ Coisas que **não** funcionam, ditas na cara:
 
 MIT — veja [LICENSE](LICENSE).
 
-O conteúdo de exemplo em `campanha/` (Vallengard, o Ermo Cinzento) é original e
+O conteúdo de exemplo em `modelo/` (Vallengard, o Ermo Cinzento) é original e
 vai junto na mesma licença. Os livros de sistema que **você** colocar em
-`campanha/livros/` são seus e não têm nada a ver com este repositório.
+pasta `livros/` da sua campanha são seus e não têm nada a ver com este repositório.

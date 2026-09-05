@@ -25,3 +25,21 @@ historico=14
 
 # Porta do painel. So mude se der conflito.
 porta=11500
+
+# ---------------------------------------------------------------------------
+# ONDE A CAMPANHA E GRAVADA
+#
+# As campanhas NAO ficam no pendrive. Ficam em:
+#   Documentos\Braseiro\<nome da campanha>\
+#
+# Assim elas sobrevivem a perder o pendrive, entram no backup do Windows,
+# e da pra ter varias mesas ao mesmo tempo. No pendrive fica so o programa.
+#
+# Qual campanha abrir. Se nao existir, e criada a partir da pasta modelo\.
+# Da pra trocar e criar pelo seletor no topo do painel, sem editar aqui.
+campanha=minha-campanha
+
+# Onde fica a pasta que guarda todas as campanhas.
+# Vazio = Documentos\Braseiro. Preencha so se quiser outro lugar,
+# por exemplo um OneDrive ou uma pasta compartilhada.
+pasta_campanhas=

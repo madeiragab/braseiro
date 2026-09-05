@@ -4,10 +4,11 @@
 
 ## Onde
 
-`campanha/livros/`, com quantas subpastas você quiser:
+Dentro da pasta da campanha, que fica em `Documentos/Braseiro/<sua campanha>/`.
+Pode ter quantas subpastas você quiser:
 
 ```
-campanha/livros/
+Documentos/Braseiro/minha-campanha/livros/
 ├── dnd5e/
 │   ├── combate.md
 │   ├── magias.md
@@ -160,7 +161,7 @@ modificação de algum arquivo mudou.
 
 ## Sobre direitos autorais
 
-O que você põe em `campanha/livros/` fica no seu pendrive, é lido só pela sua
-máquina e não vai pra lugar nenhum. Este repositório não distribui livro de
+O que você põe na pasta `livros/` da sua campanha fica no seu computador, é lido
+só pela sua máquina e não vai pra lugar nenhum. Este repositório não distribui livro de
 sistema nenhum — o exemplo em `livros/exemplo-d20/` é texto original escrito pra
 demonstrar o formato.

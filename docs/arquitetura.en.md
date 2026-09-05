@@ -9,7 +9,7 @@ flowchart LR
     N["🌐 browser<br/>ui.html"]
     S["⚙️ servidor.ps1<br/>PowerShell 5.1<br/>localhost:11500"]
     O["🧠 ollama.exe serve<br/>127.0.0.1:11434"]
-    D["📁 campanha/"]
+    D["📁 Documents/Braseiro/<campaign>/"]
 
     N <-->|"fetch + SSE"| S
     S <-->|"HTTP / NDJSON"| O
@@ -120,7 +120,7 @@ More elaborate, because a rulebook is large.
 
 ```mermaid
 flowchart TD
-    A["campanha/livros/**"] --> P{"is it a .pdf?"}
+    A["livros/**"] --> P{"is it a .pdf?"}
     P -->|yes| PX["pdf.ps1 extracts<br/>→ .pdf.txt beside it"]
     P -->|no| B
     PX --> B["split on # ## ### headings"]

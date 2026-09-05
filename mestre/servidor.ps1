@@ -3,11 +3,10 @@
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$Raiz     = Split-Path -Parent $PSScriptRoot
-$Campanha  = Join-Path $Raiz "campanha"
-$DirLore   = Join-Path $Campanha "lore"
-$DirLivros = Join-Path $Campanha "livros"
-$UTF8     = New-Object System.Text.UTF8Encoding($false)
+$Raiz = Split-Path -Parent $PSScriptRoot
+$UTF8 = New-Object System.Text.UTF8Encoding($false)
+# $Campanha, $DirLore e $DirLivros sao resolvidos depois do config,
+# porque dependem de qual campanha esta escolhida.
 
 # ---------------------------------------------------------------- utilitarios
 
@@ -46,24 +45,86 @@ function Slug($s) {
 
 # ------------------------------------------------------------------- config
 
+$ArqCfg = Join-Path $Raiz "config.txt"
 $Cfg = @{
-  modelo = "mistral-nemo:12b-instruct-2407-q4_K_M"; contexto = "8192"; camadas_gpu = "auto"
+  modelo = "mistral-nemo:12b-instruct-2407-q4_K_M"; contexto = "6144"; camadas_gpu = "auto"
   temperatura = "0.85"; historico = "14"; porta = "11500"
+  campanha = "minha-campanha"; pasta_campanhas = ""
 }
-foreach ($linha in ((Ler (Join-Path $Raiz "config.txt")) -split "`r?`n")) {
+foreach ($linha in ((Ler $ArqCfg) -split "`r?`n")) {
   if ($linha -match '^\s*([a-z_]+)\s*=\s*(.+?)\s*$') { $Cfg[$Matches[1]] = $Matches[2] }
 }
 $Porta   = [int]$Cfg.porta
 $Ollama  = "http://127.0.0.1:11434"
 $MaxHist = [int]$Cfg.historico
 
-# ------------------------------------------------------------------ historico
-
-$ArqHist = Join-Path $Campanha ".historico.json"
-$Historico = @()
-if (Test-Path -LiteralPath $ArqHist) {
-  try { $Historico = @((Ler $ArqHist) | ConvertFrom-Json) } catch { $Historico = @() }
+function GravarConfig($chave, $valor) {
+  $t = Ler $ArqCfg
+  $rx = "(?m)^" + [Regex]::Escape($chave) + "=.*$"
+  $novo = ($chave + "=" + $valor).Replace('$', '$$')
+  if ($t -match $rx) { $t = [Regex]::Replace($t, $rx, $novo) } else { $t = $t.TrimEnd() + "`r`n" + $novo + "`r`n" }
+  Gravar $ArqCfg $t
 }
+
+# --------------------------------------------------------------- a campanha
+
+# As campanhas NAO vivem no pendrive: vivem em Documentos\Braseiro\<nome>.
+# Assim elas sobrevivem a perder o pendrive, entram no backup do Windows, e da
+# pra ter varias mesas ao mesmo tempo. O que fica no pendrive e so o programa.
+$PastaCampanhas = if ($Cfg.pasta_campanhas) { $Cfg.pasta_campanhas }
+                  else { Join-Path ([Environment]::GetFolderPath('MyDocuments')) "Braseiro" }
+if (-not (Test-Path -LiteralPath $PastaCampanhas)) {
+  New-Item -ItemType Directory -Path $PastaCampanhas -Force | Out-Null
+}
+
+function NomeSeguro($n) {
+  $x = ([string]$n).Trim()
+  $x = [Regex]::Replace($x, '[<>:"/\\|?*\x00-\x1F]', '-')
+  $x = $x.Trim('.', ' ', '-')
+  if ($x.Length -gt 60) { $x = $x.Substring(0, 60).Trim() }
+  if (-not $x) { $x = "minha-campanha" }
+  $x
+}
+
+function ListarCampanhas {
+  @(Get-ChildItem -LiteralPath $PastaCampanhas -Directory -ErrorAction SilentlyContinue |
+      Sort-Object Name | ForEach-Object { $_.Name })
+}
+
+# Cria a pasta da campanha copiando o modelo que veio junto com o programa.
+function SemearCampanha($destino) {
+  New-Item -ItemType Directory -Path $destino -Force | Out-Null
+  $semente = $null
+  foreach ($c in @("modelo", "campanha")) {
+    $p = Join-Path $Raiz $c
+    if (Test-Path -LiteralPath $p) { $semente = $p; break }
+  }
+  if ($semente) {
+    Get-ChildItem -LiteralPath $semente -Force | ForEach-Object {
+      Copy-Item -LiteralPath $_.FullName -Destination $destino -Recurse -Force
+    }
+    $h = Join-Path $destino ".historico.json"
+    if (Test-Path -LiteralPath $h) { Remove-Item -LiteralPath $h -Force }
+  }
+}
+
+function AbrirCampanha($nome) {
+  $script:NomeCampanha = NomeSeguro $nome
+  $script:Campanha     = Join-Path $PastaCampanhas $script:NomeCampanha
+  if (-not (Test-Path -LiteralPath $script:Campanha)) { SemearCampanha $script:Campanha }
+  $script:DirLore   = Join-Path $script:Campanha "lore"
+  $script:DirLivros = Join-Path $script:Campanha "livros"
+  $script:ArqHist   = Join-Path $script:Campanha ".historico.json"
+  $script:Historico = @()
+  if (Test-Path -LiteralPath $script:ArqHist) {
+    try { $script:Historico = @((Ler $script:ArqHist) | ConvertFrom-Json) } catch { $script:Historico = @() }
+  }
+  $script:LivrosIdx  = $null      # o indice e por campanha
+  $script:LivrosSelo = $null
+}
+
+AbrirCampanha $Cfg.campanha
+
 function SalvarHist { Gravar $ArqHist (ConvertTo-Json @($Historico) -Depth 5 -Compress) }
 
 # ----------------------------------------------------------------- lorebook
@@ -543,7 +604,9 @@ $listener.Start()
 Write-Host ""
 Write-Host "   BRASEIRO" -ForegroundColor DarkYellow
 Write-Host "   aberto em http://localhost:$Porta" -ForegroundColor Green
-Write-Host "   Modelo: $($Cfg.modelo)   contexto: $($Cfg.contexto)" -ForegroundColor DarkGray
+Write-Host "   Modelo:   $($Cfg.modelo)   contexto: $($Cfg.contexto)" -ForegroundColor DarkGray
+Write-Host "   Campanha: $NomeCampanha" -ForegroundColor DarkGray
+Write-Host "   Gravando em $Campanha" -ForegroundColor DarkGray
 Write-Host "   Feche esta janela pra apagar o braseiro." -ForegroundColor DarkGray
 Write-Host ""
 
@@ -570,7 +633,26 @@ while ($listener.IsListening) {
       }
       $arqs += @{ id = "__livros"; nome = "livros"; texto = (ResumoLivros) }
       $hist = @($Historico | ForEach-Object { @{ papel = [string]$_.papel; texto = [string]$_.texto } })
-      Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json @{ arquivos = $arqs; historico = $hist; modelo = $Cfg.modelo } -Depth 6)
+      Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json @{
+        arquivos = $arqs; historico = $hist; modelo = $Cfg.modelo
+        campanha = $NomeCampanha; campanhas = @(ListarCampanhas); pasta = $Campanha
+      } -Depth 6)
+    }
+
+    elseif ($rota -eq "/api/campanha") {
+      # troca de mesa (cria se ainda nao existir) e grava a escolha no config
+      $d = (CorpoDe $req) | ConvertFrom-Json
+      $novo = NomeSeguro $d.nome
+      AbrirCampanha $novo
+      GravarConfig "campanha" $novo
+      Responder $resp 200 "application/json; charset=utf-8" (ConvertTo-Json @{
+        ok = $true; campanha = $NomeCampanha; campanhas = @(ListarCampanhas); pasta = $Campanha
+      } -Depth 4)
+    }
+
+    elseif ($rota -eq "/api/abrir-pasta") {
+      Start-Process explorer.exe $Campanha | Out-Null
+      Responder $resp 200 "application/json" '{"ok":true}'
     }
 
     elseif ($rota -eq "/api/salvar") {
