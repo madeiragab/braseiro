@@ -289,6 +289,12 @@ function AbrirCampanha($nome) {
   # combinar tom e tirar duvida sem gastar dado nem escrever no diario.
   $script:ArqInicio = Join-Path $script:Campanha ".iniciada"
   $script:Iniciada  = Test-Path -LiteralPath $script:ArqInicio
+  # A marca so passou a existir agora. Campanha que ja tem conversa ja comecou -
+  # sem isto toda mesa antiga voltaria pro modo chat na primeira vez que abrisse.
+  if (-not $script:Iniciada -and $script:Historico.Count -gt 0) {
+    Gravar $script:ArqInicio ((Get-Date).ToString('yyyy-MM-dd HH:mm'))
+    $script:Iniciada = $true
+  }
   $script:LivrosIdx  = $null      # o indice e por campanha
   $script:LivrosSelo = $null
 }
