@@ -139,6 +139,16 @@
     border-radius:6px;padding:9px;cursor:pointer;font-size:12.5px;margin-bottom:2px;
   }
   #btnLivros:hover{color:var(--brasa);border-color:var(--brasa)}
+#btnSair{
+  width:100%;margin-top:8px;padding:9px;border-radius:8px;cursor:pointer;
+  background:transparent;border:1px dashed #4a3a34;color:#8b7a72;
+  font:inherit;font-size:13px;transition:.15s
+}
+#btnSair:hover{color:#e0705a;border-color:#e0705a;border-style:solid}
+#apagado{
+  position:fixed;inset:0;z-index:99;display:none;place-items:center;
+  background:#12100f;color:#8b7a72;text-align:center;font-size:15px;line-height:1.9
+}
 
   ::-webkit-scrollbar{width:9px}
   ::-webkit-scrollbar-thumb{background:#332c26;border-radius:5px}
@@ -175,6 +185,12 @@
   </div></div>
 </div>
 
+<div id="apagado"><div>
+  <div style="font-size:34px;margin-bottom:10px">🔥</div>
+  o braseiro apagou.<br>
+  <span style="color:#5f524c;font-size:13px">a memória foi liberada. pode fechar esta aba.</span>
+</div></div>
+
 <button id="puxador">campanha</button>
 <div id="lado">
   <div id="mesas">
@@ -186,6 +202,7 @@
   <div style="padding:0 12px 10px">
     <button id="btnLivros">📚 adicionar livros do sistema</button>
     <input type="file" id="arqLivros" multiple accept=".pdf,.md,.markdown,.txt" hidden>
+    <button id="btnSair" title="fecha o Mestre e libera a memória">🔥 apagar o braseiro</button>
   </div>
   <div id="abas"></div>
   <textarea id="editor" spellcheck="false"></textarea>
@@ -301,6 +318,13 @@ $("#btnNova").onclick = () => {
   if (n && n.trim()) trocarMesa(n.trim());
 };
 $("#btnPasta").onclick = () => fetch("/api/abrir-pasta", {method:"POST"});
+
+$("#btnSair").onclick = async () => {
+  if (!confirm("Apagar o braseiro?\n\nFecha o Mestre e descarrega o modelo da memória.\nA campanha já está salva no disco.")) return;
+  $("#apagado").style.display = "grid";
+  // o servidor morre no meio da resposta: o erro de rede aqui é o esperado
+  try { await fetch("/api/sair", {method:"POST"}); } catch (e) {}
+};
 
 /* ---------- soltar livros ---------- */
 async function engolirLivros(lista){
