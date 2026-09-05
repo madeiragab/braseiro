@@ -1814,6 +1814,32 @@ function GravarFichasNovas([string]$mecanica) {
 # Sem cabecalho de cache o navegador guardava /api/estado e o ui.html. Trocar
 # de campanha parecia nao limpar os livros: a lista vinha do cache, nao do
 # disco. O servidor e local, entao cache aqui nao economiza nada e so engana.
+# O Ollama nao carrega o modelo nele mesmo: ele levanta um processo FILHO, o
+# llama-server, e e ESSE que segura os GB. Matar so o processo chamado
+# \"ollama\" deixava o filho vivo com o modelo inteiro na memoria depois de o
+# programa fechar - 1,14 GB presos com nada aberto na tela.
+function MatarMotor {
+  $n = 0
+  foreach ($p in @(Get-Process -ErrorAction SilentlyContinue |
+                   Where-Object { $_.ProcessName -match '^(ollama|ollama app|ollama_llama_server|llama-server)$' })) {
+    try { $p.Kill(); $n++ } catch {}
+  }
+  $n
+}
+
+# Fechar pela janela, em vez do botao, deixa o filho orfao pra tras. Ao abrir,
+# derruba llama-server que nao tem mais um ollama de pai - so esses.
+function LimparOrfaos {
+  $n = 0
+  foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -match '^(llama-server|ollama_llama_server)\.exe$' })) {
+    $pai = Get-Process -Id $p.ParentProcessId -ErrorAction SilentlyContinue
+    if ($pai -and $pai.ProcessName -match 'ollama') { continue }   # tem dono, deixa quieto
+    try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $n++ } catch {}
+  }
+  $n
+}
+
 function Responder($resp, $codigo, $tipo, $corpo) {
   $b = $UTF8.GetBytes([string]$corpo)
   $resp.StatusCode = $codigo
@@ -1842,6 +1868,11 @@ $listener.Prefixes.Add("http://localhost:$Porta/")
 $listener.Start()
 
 Write-Host ""
+$orfaos = LimparOrfaos
+if ($orfaos -gt 0) {
+  Write-Host ("   limpei " + $orfaos + " motor(es) que ficaram da vez passada") -ForegroundColor DarkYellow
+}
+
 Write-Host "   BRASEIRO" -ForegroundColor DarkYellow
 Write-Host "   aberto em http://localhost:$Porta" -ForegroundColor Green
 Write-Host "   Modelo:   $($Cfg.modelo)   contexto: $($Cfg.contexto)" -ForegroundColor DarkGray
@@ -1999,9 +2030,8 @@ while ($listener.IsListening) {
         $rq.GetResponse().Close()
         Write-Host "   modelo descarregado da memoria" -ForegroundColor DarkGray
       } catch { Write-Host "   (o motor ja estava fora)" -ForegroundColor DarkGray }
-      foreach ($pr in @(Get-Process ollama -ErrorAction SilentlyContinue)) {
-        try { $pr.Kill(); Write-Host "   motor encerrado" -ForegroundColor DarkGray } catch {}
-      }
+      $mortos = MatarMotor
+      Write-Host ("   motor encerrado (" + $mortos + " processo(s), llama-server incluso)") -ForegroundColor DarkGray
       try { $listener.Stop() } catch {}
       break
     }
