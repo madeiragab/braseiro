@@ -34,7 +34,7 @@ camadas_gpu=auto
 temperatura=0.85
 
 # Quantas mensagens recentes vao no contexto. O resto vive no diario e na lore.
-historico=14
+historico=6
 
 # Porta do painel. So mude se der conflito.
 porta=11500
